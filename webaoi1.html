@@ -1,0 +1,3865 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Hệ thống AI nhận diện PCB</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://unpkg.com/gerber-to-svg@^4.0.0/dist/gerber-to-svg.min.js"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,400;0,600;0,700;0,800;1,700&family=DM+Sans:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      :root {
+        --blue: #1d4ed8;
+        --blue2: #2563eb;
+        --blue-lt: #eff6ff;
+        --ok: #16a34a;
+        --ok-lt: #dcfce7;
+        --fail: #dc2626;
+        --fail-lt: #fee2e2;
+        --warn: #d97706;
+        --warn-lt: #fef3c7;
+        --bg: #f1f5f9;
+        --surface: #fff;
+        --border: #e2e8f0;
+        --text: #0f172a;
+        --muted: #64748b;
+        --dim: #94a3b8;
+        --HF: "Exo 2", sans-serif;
+        --BF: "DM Sans", sans-serif;
+        --hw: 800;
+      }
+      body {
+        font-family: var(--BF);
+        background: var(--bg);
+        color: var(--text);
+        transition:
+          background 0.3s,
+          color 0.3s;
+      }
+      body.dark {
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --border: #334155;
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+        --dim: #64748b;
+        --blue-lt: #1e3a5f;
+        --ok-lt: #14532d;
+        --fail-lt: #7f1d1d;
+      }
+
+      /* INTRO */
+      #intro {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        background: url("PCB.jpg") no-repeat center/cover;
+        color: white;
+        z-index: 999;
+        transition:
+          opacity 0.8s,
+          transform 0.8s;
+        overflow: hidden;
+      }
+      #intro::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.7);
+      }
+      #intro::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(37, 99, 235, 0.07) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(37, 99, 235, 0.07) 1px, transparent 1px);
+        background-size: 44px 44px;
+        animation: gp 5s ease-in-out infinite;
+      }
+      @keyframes gp {
+        0%,
+        100% {
+          opacity: 0.4;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      #intro > * {
+        position: relative;
+        z-index: 1;
+      }
+      .intro-tag {
+        font-family: var(--HF);
+        font-size: 13px;
+        letter-spacing: 5px;
+        color: #60a5fa;
+        border: 1px solid rgba(96, 165, 250, 0.4);
+        padding: 5px 20px;
+        border-radius: 2px;
+        margin-bottom: 20px;
+        animation: fu 0.5s ease both;
+      }
+      @keyframes fu {
+        from {
+          opacity: 0;
+          transform: translateY(14px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .logo {
+        width: 140px;
+        margin-bottom: 18px;
+        animation: fu 0.5s 0.08s ease both;
+        opacity: 0;
+      }
+      #intro h1 {
+        font-family: var(--HF);
+        font-weight: 800;
+        font-size: clamp(34px, 6vw, 72px);
+        letter-spacing: 4px;
+        margin-bottom: 8px;
+        animation: fu 0.5s 0.14s ease both;
+        opacity: 0;
+      }
+      #intro p {
+        font-size: 13px;
+        font-weight: 300;
+        color: rgba(255, 255, 255, 0.4);
+        letter-spacing: 2px;
+        margin-bottom: 48px;
+        animation: fu 0.5s 0.2s ease both;
+        opacity: 0;
+      }
+      #intro button {
+        padding: 14px 60px;
+        font-family: var(--HF);
+        font-weight: 800;
+        font-size: 17px;
+        letter-spacing: 4px;
+        background: var(--blue2);
+        color: white;
+        border: none;
+        border-radius: 2px;
+        cursor: pointer;
+        transition:
+          transform 0.2s,
+          box-shadow 0.2s;
+        animation: fu 0.5s 0.26s ease both;
+        opacity: 0;
+        position: relative;
+        overflow: hidden;
+      }
+      #intro button::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          rgba(255, 255, 255, 0.2),
+          transparent
+        );
+        transform: translateX(-100%);
+        transition: transform 0.4s;
+      }
+      #intro button:hover::after {
+        transform: translateX(100%);
+      }
+      #intro button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 32px rgba(37, 99, 235, 0.5);
+      }
+
+      /* HEADER */
+      #dashboard {
+        display: none;
+      }
+      header {
+        background: var(--blue);
+        color: white;
+        height: 52px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        box-shadow: 0 3px 16px rgba(0, 0, 0, 0.2);
+        padding: 0 16px;
+      }
+      body.dark header {
+        background: #0f2460;
+      }
+      .hdr-title {
+        font-family: var(--HF);
+        font-weight: 800;
+        font-size: clamp(11px, 2vw, 18px);
+        letter-spacing: 3px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .top-right {
+        position: absolute;
+        right: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        gap: 5px;
+        align-items: center;
+      }
+      .hdr-live {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-family: var(--HF);
+        font-size: 12px;
+        letter-spacing: 2px;
+        color: #86efac;
+        margin-right: 6px;
+      }
+      .hdr-live::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        background: #4ade80;
+        border-radius: 50%;
+        animation: lv 1.4s ease-in-out infinite;
+      }
+      @keyframes lv {
+        0%,
+        100% {
+          opacity: 1;
+          box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.5);
+        }
+        50% {
+          opacity: 0.7;
+          box-shadow: 0 0 0 5px rgba(74, 222, 128, 0);
+        }
+      }
+      button {
+        padding: 5px 12px;
+        font-family: var(--HF);
+        font-size: 11px;
+        letter-spacing: 1.5px;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      button:hover {
+        background: rgba(255, 255, 255, 0.22);
+        border-color: rgba(255, 255, 255, 0.55);
+      }
+
+      /* HAMBURGER for mobile */
+      .hamburger {
+        display: none;
+        flex-direction: column;
+        gap: 4px;
+        cursor: pointer;
+        padding: 6px;
+        background: transparent;
+        border: none;
+      }
+      .hamburger span {
+        width: 20px;
+        height: 2px;
+        background: white;
+        border-radius: 2px;
+        transition: all 0.3s;
+      }
+      @media (max-width: 600px) {
+        .hamburger {
+          display: flex;
+        }
+        .hdr-live {
+          display: none;
+        }
+        .hdr-hide-sm {
+          display: none !important;
+        }
+      }
+
+      /* NAV */
+      .nav-tabs {
+        display: flex;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        padding: 0 16px;
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+      }
+      .nav-tabs::-webkit-scrollbar {
+        display: none;
+      }
+      .nav-tab {
+        padding: 10px 14px;
+        font-family: var(--HF);
+        font-weight: 700;
+        font-size: 12px;
+        letter-spacing: 2px;
+        color: var(--muted);
+        border: none;
+        border-bottom: 3px solid transparent;
+        background: transparent;
+        cursor: pointer;
+        transition: all 0.2s;
+        border-radius: 0;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .nav-tab:hover {
+        color: var(--blue2);
+      }
+      .nav-tab.active {
+        color: var(--blue2);
+        border-bottom-color: var(--blue2);
+      }
+
+      /* MOBILE DRAWER */
+      .mobile-drawer {
+        position: fixed;
+        top: 52px;
+        right: 0;
+        width: 200px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 0 0 0 8px;
+        padding: 12px;
+        z-index: 990;
+        transform: translateX(110%);
+        transition: transform 0.3s;
+        box-shadow: -4px 4px 20px rgba(0, 0, 0, 0.15);
+      }
+      .mobile-drawer.open {
+        transform: translateX(0);
+      }
+      .mobile-drawer button {
+        display: block;
+        width: 100%;
+        margin-bottom: 8px;
+        padding: 10px;
+        font-family: var(--HF);
+        font-size: 12px;
+        letter-spacing: 2px;
+        text-align: left;
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+      }
+      .mobile-drawer button:hover {
+        border-color: var(--blue2);
+        color: var(--blue2);
+      }
+
+      /* MAIN */
+      .main {
+        padding: 12px;
+        max-width: 1600px;
+        margin: 0 auto;
+      }
+      @media (max-width: 480px) {
+        .main {
+          padding: 8px;
+        }
+      }
+
+      /* CARDS */
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      @media (max-width: 700px) {
+        .cards {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (max-width: 340px) {
+        .cards {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 14px 16px;
+        position: relative;
+        overflow: hidden;
+        transition:
+          transform 0.2s,
+          box-shadow 0.2s;
+      }
+      .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+      }
+      .card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+      }
+      .card.c-blue::before {
+        background: var(--blue2);
+      }
+      .card.c-ok::before {
+        background: var(--ok);
+      }
+      .card.c-fail::before {
+        background: var(--fail);
+      }
+      .card.c-warn::before {
+        background: var(--warn);
+      }
+      .card-label {
+        font-family: var(--HF);
+        font-size: 10px;
+        letter-spacing: 2.5px;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .card-value {
+        font-family: var(--HF);
+        font-weight: 800;
+        font-size: clamp(26px, 4vw, 44px);
+        line-height: 1;
+        color: var(--text);
+      }
+      .card.c-ok .card-value {
+        color: var(--ok);
+      }
+      .card.c-fail .card-value {
+        color: var(--fail);
+      }
+      .card.c-warn .card-value {
+        color: var(--warn);
+      }
+      .card-sub {
+        font-size: 10px;
+        font-weight: 300;
+        color: var(--dim);
+        margin-top: 3px;
+      }
+
+      /* STREAK */
+      #streakBanner {
+        display: none;
+        background: var(--fail-lt);
+        border: 1px solid rgba(220, 38, 38, 0.3);
+        border-left: 4px solid var(--fail);
+        border-radius: 4px;
+        padding: 9px 16px;
+        margin-bottom: 14px;
+        font-family: var(--HF);
+        font-size: 15px;
+        letter-spacing: 2px;
+        color: var(--fail);
+        align-items: center;
+        gap: 10px;
+      }
+
+      /* CONTENT / BOTTOM GRID */
+      .content-grid {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        gap: 14px;
+        margin-bottom: 14px;
+      }
+      .bottom-grid {
+        display: grid;
+        grid-template-columns: 1fr 1.5fr;
+        gap: 14px;
+        margin-bottom: 14px;
+      }
+      @media (max-width: 900px) {
+        .content-grid,
+        .bottom-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 16px;
+      }
+      @media (max-width: 480px) {
+        .panel {
+          padding: 12px;
+        }
+      }
+      .panel-title {
+        font-family: var(--HF);
+        font-size: 12px;
+        letter-spacing: 3px;
+        color: var(--muted);
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      /* STATUS */
+      .status-wrap {
+        text-align: center;
+        padding: 8px 0 14px;
+      }
+      .status-ring {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        border: 3px solid var(--border);
+        margin: 0 auto 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 30px;
+        transition:
+          border-color 0.4s,
+          box-shadow 0.4s;
+      }
+      .status-ring.ok {
+        border-color: var(--ok);
+        box-shadow: 0 0 16px rgba(22, 163, 74, 0.2);
+      }
+      .status-ring.fail {
+        border-color: var(--fail);
+        box-shadow: 0 0 16px rgba(220, 38, 38, 0.2);
+        animation: shake 0.35s ease;
+      }
+      @keyframes shake {
+        0%,
+        100% {
+          transform: rotate(0);
+        }
+        25% {
+          transform: rotate(-4deg);
+        }
+        75% {
+          transform: rotate(4deg);
+        }
+      }
+      .status-text {
+        font-family: var(--HF);
+        font-weight: 800;
+        font-size: 24px;
+        letter-spacing: 4px;
+        transition: color 0.3s;
+      }
+      .status-text.ok {
+        color: var(--ok);
+      }
+      .status-text.fail {
+        color: var(--fail);
+      }
+      .status-text.wait {
+        color: var(--dim);
+      }
+
+      /* DONUT */
+      .donut-wrap {
+        position: relative;
+        height: 140px;
+        margin-bottom: 8px;
+      }
+      .donut-center {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        pointer-events: none;
+      }
+      .donut-big {
+        font-family: var(--HF);
+        font-size: 22px;
+        color: var(--fail);
+        display: block;
+      }
+      .donut-sm {
+        font-size: 10px;
+        font-weight: 300;
+        color: var(--dim);
+        letter-spacing: 1px;
+      }
+      .legend {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        margin-top: 6px;
+      }
+      .leg-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-family: var(--HF);
+        font-size: 12px;
+        letter-spacing: 1px;
+        color: var(--muted);
+      }
+      .leg-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 2px;
+      }
+
+      /* SOUND */
+      .sound-box {
+        margin-top: 12px;
+        padding-top: 10px;
+        border-top: 1px solid var(--border);
+      }
+      .sound-title {
+        font-family: var(--HF);
+        font-size: 11px;
+        letter-spacing: 2px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      .sound-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text);
+      }
+      select,
+      input[type="range"] {
+        font-family: var(--BF);
+        font-size: 11px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--text);
+        border-radius: 3px;
+        padding: 3px 6px;
+      }
+      input[type="range"] {
+        width: 80px;
+      }
+      .test-btn {
+        width: 100%;
+        margin-top: 5px;
+        background: var(--blue-lt) !important;
+        color: var(--blue2) !important;
+        border: 1px solid var(--blue2) !important;
+        font-family: var(--HF) !important;
+        font-size: 12px !important;
+        letter-spacing: 2px !important;
+      }
+
+      /* CHART TABS */
+      .chart-tabs {
+        display: flex;
+        gap: 4px;
+      }
+      .tab-btn {
+        padding: 3px 10px;
+        font-family: var(--HF);
+        font-size: 11px;
+        letter-spacing: 1.5px;
+        border: 1px solid var(--border);
+        border-radius: 2px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .tab-btn.active,
+      .tab-btn:hover {
+        border-color: var(--blue2);
+        color: var(--blue2);
+        background: var(--blue-lt);
+      }
+      .line-wrap {
+        height: 220px;
+        position: relative;
+      }
+      .hour-wrap {
+        height: 150px;
+        position: relative;
+        margin-top: 14px;
+      }
+
+      /* IMAGE */
+      .img-frame {
+        position: relative;
+        border-radius: 5px;
+        overflow: hidden;
+        background: var(--bg);
+        aspect-ratio: 16/10;
+        margin-top: 12px;
+        border: 1px solid var(--border);
+      }
+      #resultImage {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+        transition: opacity 0.3s;
+        cursor: zoom-in;
+      }
+      .img-overlay {
+        position: absolute;
+        inset: 0;
+        border-radius: 5px;
+        border: 2px solid transparent;
+        pointer-events: none;
+        transition:
+          border-color 0.4s,
+          box-shadow 0.4s;
+      }
+      .img-overlay.ok {
+        border-color: var(--ok);
+        box-shadow: inset 0 0 16px rgba(22, 163, 74, 0.08);
+      }
+      .img-overlay.fail {
+        border-color: var(--fail);
+        box-shadow: inset 0 0 16px rgba(220, 38, 38, 0.08);
+      }
+      .scan-bar-wrap {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .scan-bar {
+        position: absolute;
+        width: 100%;
+        height: 2px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--blue2),
+          transparent
+        );
+        animation: scan 2.2s linear infinite;
+        opacity: 0.4;
+      }
+      @keyframes scan {
+        0% {
+          top: 0;
+        }
+        100% {
+          top: 100%;
+        }
+      }
+
+      /* HISTORY */
+      .filter-row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .filter-row select,
+      .filter-row input[type="time"] {
+        font-size: 11px;
+        padding: 4px 7px;
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--BF);
+      }
+      .filter-btn {
+        padding: 4px 10px;
+        font-family: var(--HF);
+        font-size: 11px;
+        letter-spacing: 1px;
+        border: 1px solid var(--blue2);
+        border-radius: 2px;
+        background: var(--blue-lt);
+        color: var(--blue2);
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .filter-btn:hover {
+        background: var(--blue2);
+        color: white;
+      }
+      .note-row {
+        display: flex;
+        gap: 5px;
+        margin-top: 7px;
+      }
+      .note-row input {
+        flex: 1;
+        padding: 5px 9px;
+        font-family: var(--BF);
+        font-size: 12px;
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        background: var(--bg);
+        color: var(--text);
+      }
+      .note-row button {
+        padding: 5px 12px;
+        background: var(--blue2);
+        color: white;
+        border-color: var(--blue2);
+        font-family: var(--HF);
+        font-size: 12px;
+        letter-spacing: 1px;
+      }
+      .history-scroll {
+        max-height: 200px;
+        overflow-y: auto;
+        margin-top: 8px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border) transparent;
+        -webkit-overflow-scrolling: touch;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th {
+        font-family: var(--HF);
+        font-size: 10px;
+        letter-spacing: 2px;
+        color: white;
+        background: var(--blue);
+        padding: 6px 8px;
+        text-align: center;
+        position: sticky;
+        top: 0;
+      }
+      td {
+        font-size: 12px;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--border);
+        text-align: center;
+        color: var(--muted);
+      }
+      tbody tr:hover {
+        background: var(--blue-lt);
+      }
+      .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 2px;
+        font-family: var(--HF);
+        font-size: 11px;
+        letter-spacing: 1.5px;
+      }
+      .badge-ok {
+        background: var(--ok-lt);
+        color: var(--ok);
+      }
+      .badge-fail {
+        background: var(--fail-lt);
+        color: var(--fail);
+      }
+      /* Hide some table cols on mobile */
+      @media (max-width: 480px) {
+        th:nth-child(3),
+        td:nth-child(3),
+        th:nth-child(4),
+        td:nth-child(4) {
+          display: none;
+        }
+      }
+
+      /* LIGHTBOX */
+      #lightbox {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.88);
+        z-index: 9999;
+        align-items: center;
+        justify-content: center;
+        cursor: zoom-out;
+      }
+      #lightbox.show {
+        display: flex;
+      }
+      #lightbox img {
+        max-width: 92vw;
+        max-height: 92vh;
+        border-radius: 6px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      }
+
+      /* ============================= PCB VIEWER ============================= */
+      .viewer-page-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      @media (max-width: 1000px) {
+        .viewer-page-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .upload-area {
+        border: 2px dashed var(--border);
+        border-radius: 8px;
+        padding: 24px 16px;
+        text-align: center;
+        cursor: pointer;
+        transition:
+          border-color 0.2s,
+          background 0.2s;
+        background: var(--surface);
+        position: relative;
+      }
+      .upload-area:hover,
+      .upload-area.drag-over {
+        border-color: var(--blue2);
+        background: var(--blue-lt);
+      }
+      .upload-area input {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+        width: 100%;
+        height: 100%;
+      }
+      .upload-icon {
+        font-size: 28px;
+        margin-bottom: 8px;
+      }
+      .upload-title {
+        font-family: var(--HF);
+        font-size: 14px;
+        letter-spacing: 3px;
+        color: var(--text);
+        margin-bottom: 4px;
+      }
+      .upload-sub {
+        font-size: 12px;
+        font-weight: 300;
+        color: var(--muted);
+      }
+      .upload-sub span {
+        color: var(--blue2);
+        font-weight: 500;
+      }
+      .viewer-toolbar {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+      }
+      .viewer-toolbar .panel-title {
+        margin-bottom: 0;
+        border: none;
+        padding-bottom: 0;
+        flex: 1;
+        min-width: 120px;
+      }
+      .vbtn {
+        padding: 4px 12px;
+        font-family: var(--HF);
+        font-size: 12px;
+        letter-spacing: 1.5px;
+        border: 1px solid var(--border);
+        border-radius: 2px;
+        background: var(--surface);
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .vbtn:hover {
+        border-color: var(--blue2);
+        color: var(--blue2);
+      }
+      .vbtn.danger:hover {
+        border-color: var(--fail);
+        color: var(--fail);
+      }
+      .sch-canvas {
+        background: #fafafa;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+        position: relative;
+        height: 380px;
+        cursor: grab;
+        user-select: none;
+        touch-action: none;
+      }
+      body.dark .sch-canvas {
+        background: #111827;
+      }
+      .sch-canvas:active {
+        cursor: grabbing;
+      }
+      .sch-canvas img {
+        position: absolute;
+        top: 0;
+        left: 0;
+        transform-origin: 0 0;
+        max-width: none;
+        display: block;
+      }
+      .sch-placeholder,
+      .view3d-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: var(--dim);
+        text-align: center;
+        padding: 20px;
+      }
+      .sch-placeholder-icon,
+      .view3d-placeholder-icon {
+        font-size: 36px;
+        opacity: 0.35;
+        margin-bottom: 10px;
+      }
+      .sch-placeholder-text,
+      .view3d-placeholder-text {
+        font-family: var(--HF);
+        font-size: 13px;
+        letter-spacing: 2px;
+        color: var(--muted);
+      }
+      .sch-placeholder-sub,
+      .view3d-placeholder-sub {
+        font-size: 12px;
+        font-weight: 300;
+        color: var(--dim);
+        margin-top: 5px;
+      }
+      .zoom-hint {
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        font-family: var(--HF);
+        font-size: 10px;
+        letter-spacing: 1px;
+        color: var(--dim);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        padding: 3px 8px;
+        border-radius: 3px;
+        pointer-events: none;
+      }
+      .view3d-canvas {
+        background: #0f0f1a;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+        position: relative;
+        height: 380px;
+        cursor: grab;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        touch-action: none;
+      }
+      .view3d-canvas:active {
+        cursor: grabbing;
+      }
+      .view3d-canvas img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        display: block;
+        transition: filter 0.3s;
+      }
+      .controls-3d {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 10px 14px;
+        background: var(--bg);
+        border-radius: 4px;
+        margin-top: 8px;
+        border: 1px solid var(--border);
+      }
+      .ctrl-label {
+        font-family: var(--HF);
+        font-size: 10px;
+        letter-spacing: 2px;
+        color: var(--muted);
+      }
+      .ctrl-slider {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1;
+        min-width: 140px;
+      }
+      .ctrl-slider label {
+        font-family: var(--HF);
+        font-size: 10px;
+        letter-spacing: 1px;
+        color: var(--dim);
+        white-space: nowrap;
+        width: 60px;
+      }
+      .ctrl-slider input[type="range"] {
+        flex: 1;
+        width: auto;
+      }
+      .ctrl-slider span {
+        font-family: var(--HF);
+        font-size: 11px;
+        color: var(--blue2);
+        width: 36px;
+        text-align: right;
+      }
+      .info-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+      .info-badge {
+        font-family: var(--HF);
+        font-size: 11px;
+        letter-spacing: 1.5px;
+        padding: 3px 10px;
+        border-radius: 2px;
+        background: var(--blue-lt);
+        color: var(--blue2);
+        border: 1px solid rgba(37, 99, 235, 0.2);
+      }
+      .info-badge.ok-badge {
+        background: var(--ok-lt);
+        color: var(--ok);
+        border-color: rgba(22, 163, 74, 0.2);
+      }
+      .layer-controls {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+        align-items: center;
+      }
+      .layer-btn {
+        padding: 3px 10px;
+        font-family: var(--HF);
+        font-size: 11px;
+        letter-spacing: 1px;
+        border: 1px solid var(--border);
+        border-radius: 2px;
+        cursor: pointer;
+        transition: all 0.2s;
+        background: var(--surface);
+        color: var(--muted);
+      }
+      .file-list {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+      .file-chip {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 9px;
+        font-family: var(--HF);
+        font-size: 11px;
+        letter-spacing: 1px;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: var(--surface);
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .file-chip:hover,
+      .file-chip.active {
+        border-color: var(--blue2);
+        color: var(--blue2);
+        background: var(--blue-lt);
+      }
+      .gerber-canvas-wrap {
+        background: #1a1a2e;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        overflow: hidden;
+        position: relative;
+        min-height: 300px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* ============================= AI COMPARE ============================= */
+      .ai-compare-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      @media (max-width: 800px) {
+        .ai-compare-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .ai-compare-frame {
+        border-radius: 8px;
+        border: 2px solid var(--border);
+        overflow: hidden;
+        position: relative;
+        background: var(--bg);
+        aspect-ratio: 4/3;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .ai-compare-frame img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+      .ai-compare-label {
+        font-family: var(--HF);
+        font-size: 11px;
+        letter-spacing: 2px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .ai-compare-frame.ref-border {
+        border-color: var(--blue2);
+      }
+      .ai-compare-frame.cam-border {
+        border-color: var(--ok);
+      }
+      .compare-btn {
+        width: 100%;
+        padding: 12px;
+        font-family: var(--HF);
+        font-weight: 800;
+        font-size: 14px;
+        letter-spacing: 3px;
+        background: var(--blue2);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-top: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+      .compare-btn:hover {
+        background: #1d4ed8;
+        box-shadow: 0 4px 20px rgba(37, 99, 235, 0.4);
+      }
+      .compare-btn:disabled {
+        background: var(--muted);
+        cursor: not-allowed;
+        box-shadow: none;
+      }
+      .ai-result-box {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+        margin-top: 12px;
+        min-height: 120px;
+      }
+      .ai-result-title {
+        font-family: var(--HF);
+        font-size: 11px;
+        letter-spacing: 3px;
+        color: var(--muted);
+        margin-bottom: 10px;
+      }
+      .ai-result-content {
+        font-size: 13px;
+        line-height: 1.7;
+        color: var(--text);
+      }
+      .ai-verdict {
+        display: inline-block;
+        padding: 6px 18px;
+        border-radius: 4px;
+        font-family: var(--HF);
+        font-size: 13px;
+        letter-spacing: 2px;
+        margin-bottom: 10px;
+      }
+      .ai-verdict.match {
+        background: var(--ok-lt);
+        color: var(--ok);
+        border: 1px solid rgba(22, 163, 74, 0.3);
+      }
+      .ai-verdict.mismatch {
+        background: var(--fail-lt);
+        color: var(--fail);
+        border: 1px solid rgba(220, 38, 38, 0.3);
+      }
+      .ai-verdict.analyzing {
+        background: var(--warn-lt);
+        color: var(--warn);
+        border: 1px solid rgba(217, 119, 6, 0.3);
+      }
+      .ai-diff-list {
+        list-style: none;
+        padding: 0;
+        margin-top: 8px;
+      }
+      .ai-diff-list li {
+        padding: 6px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--muted);
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+      }
+      .ai-diff-list li::before {
+        content: "▸";
+        color: var(--fail);
+        flex-shrink: 0;
+      }
+      .ai-diff-list li.ok-item::before {
+        content: "✔";
+        color: var(--ok);
+      }
+      .ai-spinner {
+        display: none;
+        width: 36px;
+        height: 36px;
+        border: 3px solid var(--border);
+        border-top-color: var(--blue2);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin: 20px auto;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .cam-controls {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+      }
+      .cam-btn {
+        padding: 6px 14px;
+        font-family: var(--HF);
+        font-size: 11px;
+        letter-spacing: 2px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--surface);
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .cam-btn:hover,
+      .cam-btn.active {
+        border-color: var(--blue2);
+        color: var(--blue2);
+        background: var(--blue-lt);
+      }
+      .cam-btn.capture-btn {
+        background: var(--fail);
+        color: white;
+        border-color: var(--fail);
+      }
+      .cam-btn.capture-btn:hover {
+        background: #b91c1c;
+      }
+
+      .ai-confidence-bar {
+        height: 6px;
+        background: var(--border);
+        border-radius: 4px;
+        overflow: hidden;
+        margin: 6px 0;
+      }
+      .ai-confidence-fill {
+        height: 100%;
+        border-radius: 4px;
+        transition: width 0.8s ease;
+      }
+      /* score colors */
+      .conf-high {
+        background: var(--ok);
+      }
+      .conf-mid {
+        background: var(--warn);
+      }
+      .conf-low {
+        background: var(--fail);
+      }
+
+      /* ANALYTICS */
+      .analytics-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      @media (max-width: 900px) {
+        .analytics-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .chart-tall {
+        height: 260px;
+        position: relative;
+      }
+      .chart-med {
+        height: 200px;
+        position: relative;
+      }
+      .heatmap-wrap {
+        overflow-x: auto;
+        margin-top: 8px;
+        -webkit-overflow-scrolling: touch;
+      }
+      .heatmap {
+        display: grid;
+        grid-template-columns: 44px repeat(24, 1fr);
+        gap: 2px;
+        min-width: 580px;
+      }
+      .hm-cell {
+        height: 22px;
+        border-radius: 3px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: var(--HF);
+        font-size: 9px;
+        color: white;
+        cursor: default;
+      }
+      .hm-label {
+        font-family: var(--HF);
+        font-size: 11px;
+        letter-spacing: 1px;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        padding-right: 6px;
+      }
+      .hm-header {
+        font-family: var(--HF);
+        font-size: 9px;
+        color: var(--dim);
+        text-align: center;
+        height: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .defect-list {
+        margin-top: 6px;
+      }
+      .defect-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .defect-rank {
+        font-family: var(--HF);
+        font-size: 18px;
+        color: var(--dim);
+        width: 24px;
+      }
+      .defect-name {
+        font-family: var(--HF);
+        font-size: 14px;
+        letter-spacing: 1px;
+        flex: 1;
+        color: var(--text);
+      }
+      .defect-bar-outer {
+        width: 100px;
+        height: 6px;
+        background: var(--border);
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .defect-bar-inner {
+        height: 100%;
+        border-radius: 4px;
+        background: var(--fail);
+        transition: width 0.6s;
+      }
+      .defect-count {
+        font-family: var(--HF);
+        font-size: 15px;
+        color: var(--fail);
+        width: 32px;
+        text-align: right;
+      }
+      .shift-compare {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 6px;
+      }
+      .shift-box {
+        background: var(--bg);
+        border-radius: 5px;
+        padding: 12px;
+        border: 1px solid var(--border);
+      }
+      .shift-box-title {
+        font-family: var(--HF);
+        font-size: 12px;
+        letter-spacing: 2px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .shift-stat {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        padding: 3px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .shift-stat:last-child {
+        border: none;
+      }
+      .shift-stat span:last-child {
+        font-family: var(--HF);
+        font-size: 13px;
+        letter-spacing: 1px;
+        color: var(--text);
+      }
+
+      /* TOAST */
+      .toast {
+        position: fixed;
+        bottom: 18px;
+        right: 18px;
+        padding: 10px 18px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-left: 4px solid var(--fail);
+        border-radius: 4px;
+        font-family: var(--HF);
+        font-size: 13px;
+        letter-spacing: 2px;
+        color: var(--fail);
+        transform: translateX(140%);
+        transition: transform 0.3s;
+        z-index: 9998;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        max-width: 90vw;
+      }
+      .toast.show {
+        transform: translateX(0);
+      }
+      .toast.warn-toast {
+        border-left-color: var(--warn);
+        color: var(--warn);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- INTRO -->
+    <div id="intro">
+      <div class="intro-tag">AI Vision System</div>
+      <img src="images.png" class="logo" />
+      <h1>PCB INSPECTOR</h1>
+      <p>Automated Quality Detection · Real-time Analysis</p>
+      <button onclick="startDashboard()">START</button>
+    </div>
+
+    <div id="dashboard">
+      <header>
+        <span class="hdr-title">PCB AI INSPECTION DASHBOARD</span>
+        <div class="top-right">
+          <span class="hdr-live">LIVE</span>
+          <button onclick="toggleDark()" class="hdr-hide-sm">Dark</button>
+          <button onclick="exportCSV()" class="hdr-hide-sm">CSV</button>
+          <button onclick="goFull()" class="hdr-hide-sm">Full</button>
+          <button onclick="logout()" class="hdr-hide-sm">Out</button>
+          <button
+            class="hamburger"
+            onclick="toggleDrawer()"
+            aria-label="Menu"
+            style="display: none"
+          >
+            <span></span><span></span><span></span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Mobile drawer -->
+      <div class="mobile-drawer" id="mobileDrawer">
+        <button
+          onclick="
+            toggleDark();
+            toggleDrawer();
+          "
+        >
+          🌙 Dark Mode
+        </button>
+        <button
+          onclick="
+            exportCSV();
+            toggleDrawer();
+          "
+        >
+          📥 Export CSV
+        </button>
+        <button
+          onclick="
+            goFull();
+            toggleDrawer();
+          "
+        >
+          ⛶ Fullscreen
+        </button>
+        <button onclick="logout()">🚪 Logout</button>
+      </div>
+
+      <div class="nav-tabs">
+        <button class="nav-tab active" onclick="showPage('main', this)">
+          Dashboard
+        </button>
+        <button class="nav-tab" onclick="showPage('pcbview', this)">
+          PCB Viewer
+        </button>
+        <button class="nav-tab" onclick="showPage('aicompare', this)">
+          🤖 AI Compare
+        </button>
+        <button class="nav-tab" onclick="showPage('analytics', this)">
+          Phân tích
+        </button>
+      </div>
+
+      <!-- ===== MAIN ===== -->
+      <div id="page-main" style="display: block">
+        <div class="main">
+          <div class="cards">
+            <div class="card c-blue">
+              <div class="card-label">Total</div>
+              <div class="card-value" id="totalValue">0</div>
+              <div class="card-sub">scanned</div>
+            </div>
+            <div class="card c-ok">
+              <div class="card-label">Passed</div>
+              <div class="card-value" id="okValue">0</div>
+              <div class="card-sub">quality OK</div>
+            </div>
+            <div class="card c-fail">
+              <div class="card-label">Failed</div>
+              <div class="card-value" id="failValue">0</div>
+              <div class="card-sub">defects</div>
+            </div>
+            <div class="card c-warn">
+              <div class="card-label">Error Rate</div>
+              <div class="card-value" id="percentValue">0%</div>
+              <div class="card-sub">percentage</div>
+            </div>
+          </div>
+
+          <div id="streakBanner">⚠ <span id="streakText"></span></div>
+
+          <div class="content-grid">
+            <div class="panel">
+              <div class="panel-title">Current Status</div>
+              <div class="status-wrap">
+                <div class="status-ring" id="statusRing">⏳</div>
+                <div class="status-text wait" id="statusText">WAITING</div>
+              </div>
+              <div class="panel-title" style="margin-top: 12px">
+                Pass / Fail Ratio
+              </div>
+              <div class="donut-wrap">
+                <canvas id="doughnutChart"></canvas>
+                <div class="donut-center">
+                  <span class="donut-big" id="percentCenter">0%</span
+                  ><span class="donut-sm">error rate</span>
+                </div>
+              </div>
+              <div class="legend">
+                <div class="leg-item">
+                  <div class="leg-dot" style="background: var(--ok)"></div>
+                  OK
+                </div>
+                <div class="leg-item">
+                  <div class="leg-dot" style="background: var(--fail)"></div>
+                  FAIL
+                </div>
+              </div>
+              <div class="sound-box">
+                <div class="sound-title">🔊 Cảnh báo âm thanh</div>
+                <div class="sound-row">
+                  <label>Loại âm</label>
+                  <select id="soundType">
+                    <option value="beep">Beep</option>
+                    <option value="alarm">Alarm</option>
+                    <option value="chime">Chime</option>
+                    <option value="off">Tắt</option>
+                  </select>
+                </div>
+                <div class="sound-row">
+                  <label>Âm lượng</label>
+                  <input
+                    type="range"
+                    id="volSlider"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value="0.7"
+                    oninput="soundVol = parseFloat(this.value)"
+                  />
+                </div>
+                <div class="sound-row">
+                  <label>Streak từ</label>
+                  <select id="streakThreshold">
+                    <option value="3">3 lỗi</option>
+                    <option value="5" selected>5 lỗi</option>
+                    <option value="10">10 lỗi</option>
+                  </select>
+                </div>
+                <button class="test-btn" onclick="testSound()">
+                  ▶ TEST ÂM THANH
+                </button>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">
+                <span>Inspection Timeline</span>
+                <div class="chart-tabs">
+                  <button class="tab-btn active" onclick="setView(this, 'all')">
+                    All
+                  </button>
+                  <button class="tab-btn" onclick="setView(this, 'ok')">
+                    OK
+                  </button>
+                  <button class="tab-btn" onclick="setView(this, 'fail')">
+                    Fail
+                  </button>
+                </div>
+              </div>
+              <div class="line-wrap"><canvas id="lineChart"></canvas></div>
+              <div class="panel-title" style="margin-top: 16px">
+                <span>Thống kê theo giờ</span>
+                <div class="chart-tabs">
+                  <button
+                    class="tab-btn active"
+                    onclick="setHourView(this, 'count')"
+                  >
+                    Số lượng
+                  </button>
+                  <button class="tab-btn" onclick="setHourView(this, 'rate')">
+                    Tỉ lệ
+                  </button>
+                </div>
+              </div>
+              <div class="hour-wrap"><canvas id="hourChart"></canvas></div>
+            </div>
+          </div>
+
+          <div class="bottom-grid">
+            <div class="panel">
+              <div class="panel-title">
+                <span>Live Inspection Feed</span>
+                <span
+                  style="
+                    font-size: 10px;
+                    letter-spacing: 1.5px;
+                    padding: 2px 8px;
+                    border-radius: 2px;
+                    background: var(--ok-lt);
+                    color: var(--ok);
+                    border: 1px solid rgba(22, 163, 74, 0.3);
+                  "
+                  >📷 CAM NGOÀI</span
+                >
+              </div>
+              <div class="img-frame">
+                <img
+                  id="resultImage"
+                  src="uploads/result.jpg"
+                  alt="PCB"
+                  onclick="openLightbox(this.src)"
+                />
+                <div class="img-overlay" id="imgOverlay"></div>
+                <div class="scan-bar-wrap"><div class="scan-bar"></div></div>
+              </div>
+              <div
+                style="
+                  margin-top: 10px;
+                  display: flex;
+                  gap: 8px;
+                  align-items: flex-end;
+                  flex-wrap: wrap;
+                "
+              >
+                <div style="flex: 1; min-width: 140px">
+                  <div
+                    style="
+                      font-family: var(--HF);
+                      font-size: 10px;
+                      letter-spacing: 2px;
+                      color: var(--muted);
+                      margin-bottom: 4px;
+                    "
+                  >
+                    ẢNH 3D CHUẨN
+                  </div>
+                  <div style="display: flex; gap: 6px; align-items: center">
+                    <div
+                      id="refThumb"
+                      style="
+                        width: 54px;
+                        height: 40px;
+                        border-radius: 4px;
+                        border: 1px solid var(--border);
+                        background: var(--bg);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 18px;
+                        flex-shrink: 0;
+                        overflow: hidden;
+                        cursor: pointer;
+                      "
+                      onclick="
+                        document.getElementById('refImageInput2').click()
+                      "
+                    >
+                      📋
+                    </div>
+                    <input
+                      type="file"
+                      id="refImageInput2"
+                      accept="image/*"
+                      style="display: none"
+                      onchange="loadRefImageDash(this.files[0])"
+                    />
+                    <button
+                      onclick="
+                        document.getElementById('refImageInput2').click()
+                      "
+                      style="
+                        padding: 5px 10px;
+                        background: var(--blue-lt);
+                        color: var(--blue2);
+                        border: 1px solid var(--blue2);
+                        font-family: var(--HF);
+                        font-size: 10px;
+                        letter-spacing: 1.5px;
+                        border-radius: 3px;
+                        cursor: pointer;
+                        white-space: nowrap;
+                      "
+                    >
+                      📂 Chọn ảnh
+                    </button>
+                  </div>
+                </div>
+                <button
+                  id="dashCompareBtn"
+                  onclick="runDashAICompare()"
+                  disabled
+                  style="
+                    padding: 8px 14px;
+                    font-family: var(--HF);
+                    font-weight: 800;
+                    font-size: 11px;
+                    letter-spacing: 2px;
+                    background: var(--blue2);
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    white-space: nowrap;
+                    opacity: 0.5;
+                  "
+                >
+                  🤖 SO SÁNH AI
+                </button>
+              </div>
+              <div
+                id="dashAiResult"
+                style="
+                  display: none;
+                  margin-top: 10px;
+                  padding: 10px 12px;
+                  background: var(--bg);
+                  border-radius: 6px;
+                  border: 1px solid var(--border);
+                "
+              >
+                <div
+                  id="dashAiContent"
+                  style="font-size: 12px; line-height: 1.6; color: var(--text)"
+                ></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">
+                <span>Lịch sử kiểm tra</span>
+                <span id="histCount" style="font-size: 11px; color: var(--dim)"
+                  >0 records</span
+                >
+              </div>
+              <div class="filter-row">
+                <select id="filterStatus" onchange="applyFilter()">
+                  <option value="all">Tất cả</option>
+                  <option value="OK">OK</option>
+                  <option value="FAIL">FAIL</option>
+                </select>
+                <input type="time" id="filterFrom" onchange="applyFilter()" />
+                <input type="time" id="filterTo" onchange="applyFilter()" />
+                <button class="filter-btn" onclick="resetFilter()">
+                  Reset
+                </button>
+              </div>
+              <div class="note-row">
+                <input
+                  type="text"
+                  id="noteInput"
+                  placeholder="Ghi chú cho FAIL tiếp theo..."
+                />
+                <button onclick="saveNote()">Lưu</button>
+              </div>
+              <div class="history-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Status</th>
+                      <th>Total</th>
+                      <th>OK</th>
+                      <th>FAIL</th>
+                      <th>Note</th>
+                    </tr>
+                  </thead>
+                  <tbody id="historyBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== PCB VIEWER ===== -->
+      <div id="page-pcbview" style="display: none">
+        <div class="main">
+          <div class="panel" style="margin-bottom: 16px">
+            <div class="viewer-toolbar">
+              <div class="panel-title">📐 Schematic Viewer</div>
+              <button class="vbtn" onclick="schZoom(1.25)">＋</button>
+              <button class="vbtn" onclick="schZoom(0.8)">－</button>
+              <button class="vbtn" onclick="schFit()">Fit</button>
+              <button class="vbtn" onclick="schRotate()">↻</button>
+              <button class="vbtn danger" onclick="clearSch()">✕</button>
+            </div>
+            <div
+              id="schUploadArea"
+              class="upload-area"
+              ondragover="
+                event.preventDefault();
+                this.classList.add('drag-over');
+              "
+              ondragleave="this.classList.remove('drag-over')"
+              ondrop="handleSchDrop(event)"
+            >
+              <input
+                type="file"
+                id="schFileInput"
+                accept=".svg,.pdf,.png,.jpg,.jpeg,.bmp,.webp"
+                onchange="handleSchFile(this.files[0])"
+              />
+              <div class="upload-icon">📋</div>
+              <div class="upload-title">Upload Schematic</div>
+              <div class="upload-sub">
+                Kéo thả hoặc <span>bấm để chọn</span>
+              </div>
+              <div class="upload-sub" style="margin-top: 3px">
+                SVG · PNG · JPG · PDF từ Altium / KiCad / Eagle
+              </div>
+            </div>
+            <div
+              class="sch-canvas"
+              id="schCanvas"
+              style="display: none; height: 520px"
+              onwheel="schWheel(event)"
+              onmousedown="schDragStart(event)"
+              onmousemove="schDragMove(event)"
+              onmouseup="schDragEnd()"
+              onmouseleave="schDragEnd()"
+            >
+              <div class="zoom-hint" id="schZoomHint">100%</div>
+            </div>
+            <div class="info-row" id="schInfoRow" style="display: none">
+              <div class="info-badge" id="schFileName">--</div>
+              <div class="info-badge" id="schFileType">--</div>
+              <div class="info-badge ok-badge" id="schDims">--</div>
+            </div>
+          </div>
+
+          <!-- GERBER VIEWER -->
+          <div class="panel" style="margin-top: 18px">
+            <div class="viewer-toolbar">
+              <div class="panel-title">🔌 Gerber Layer Viewer</div>
+              <div class="file-list" id="gerberFileList"></div>
+              <button class="vbtn" onclick="gerberZoom(1.3)">＋</button>
+              <button class="vbtn" onclick="gerberZoom(0.77)">－</button>
+              <button class="vbtn" onclick="gerberFit()">Fit</button>
+              <button class="vbtn danger" onclick="clearGerber()">
+                ✕ Clear
+              </button>
+            </div>
+            <div class="layer-controls" id="layerControls"></div>
+            <div
+              class="upload-area"
+              id="gerberUploadArea"
+              ondragover="
+                event.preventDefault();
+                this.classList.add('drag-over');
+              "
+              ondragleave="this.classList.remove('drag-over')"
+              ondrop="handleGerberDrop(event)"
+              style="margin-bottom: 12px"
+            >
+              <input
+                type="file"
+                id="gerberFileInput"
+                multiple
+                accept=".gbr,.ger,.GTL,.GBL,.GTS,.GBS,.GTO,.GBO,.GKO,.DRL,.drl,.exc,.txt"
+                onchange="handleGerberFiles(this.files)"
+              />
+              <div class="upload-icon">📂</div>
+              <div class="upload-title">Upload Gerber Files</div>
+              <div class="upload-sub">
+                <span>Bấm hoặc kéo thả</span> nhiều file cùng lúc
+              </div>
+              <div class="upload-sub" style="margin-top: 3px">
+                .GTL .GBL .GTS .GKO .DRL — Altium / KiCad / Eagle
+              </div>
+            </div>
+            <div class="gerber-canvas-wrap" id="gerberCanvas">
+              <div class="sch-placeholder">
+                <div class="sch-placeholder-icon">🔌</div>
+                <div class="sch-placeholder-text">Chưa có Gerber file</div>
+                <div class="sch-placeholder-sub">
+                  Upload để xem layout từng layer
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== AI COMPARE ===== -->
+      <div id="page-aicompare" style="display: none">
+        <div class="main">
+          <div class="panel" style="margin-bottom: 16px">
+            <div class="panel-title">
+              🤖 AI So sánh mạch 3D — Reference vs Camera ngoài
+            </div>
+            <p
+              style="
+                font-size: 12px;
+                color: var(--muted);
+                line-height: 1.7;
+                margin-bottom: 14px;
+              "
+            >
+              Upload ảnh 3D chuẩn từ Altium/KiCad. Ảnh thực tế lấy trực tiếp từ
+              <strong style="color: var(--text)">camera ngoài</strong> đang
+              stream (hoặc upload thủ công). AI sẽ phân tích sai lệch linh kiện,
+              lỗi hàn, v.v.
+            </p>
+
+            <div class="ai-compare-grid">
+              <!-- Reference image -->
+              <div>
+                <div class="ai-compare-label">📐 ẢNH CHUẨN (3D Reference)</div>
+                <div class="ai-compare-frame ref-border" id="refFrame">
+                  <div
+                    style="color: var(--dim); text-align: center; padding: 20px"
+                  >
+                    <div style="font-size: 32px; margin-bottom: 8px">📋</div>
+                    <div
+                      style="
+                        font-family: var(--HF);
+                        font-size: 12px;
+                        letter-spacing: 2px;
+                      "
+                    >
+                      Chưa có ảnh chuẩn
+                    </div>
+                  </div>
+                </div>
+                <div style="display: flex; gap: 8px; margin-top: 8px">
+                  <label style="flex: 1; cursor: pointer">
+                    <input
+                      type="file"
+                      id="refImageInput"
+                      accept="image/*"
+                      style="display: none"
+                      onchange="loadRefImage(this.files[0])"
+                    />
+                    <div
+                      class="cam-btn"
+                      style="width: 100%; text-align: center"
+                      onclick="document.getElementById('refImageInput').click()"
+                    >
+                      📂 Upload ảnh chuẩn (3D)
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <!-- External camera frame -->
+              <div>
+                <div
+                  class="ai-compare-label"
+                  style="
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                  "
+                >
+                  <span>📷 ẢNH THỰC TẾ (Camera ngoài)</span>
+                  <span
+                    id="extCamStatus"
+                    style="
+                      font-size: 10px;
+                      letter-spacing: 1px;
+                      padding: 2px 8px;
+                      border-radius: 2px;
+                      background: var(--ok-lt);
+                      color: var(--ok);
+                    "
+                    >● LIVE</span
+                  >
+                </div>
+                <div class="ai-compare-frame cam-border" id="camFrame">
+                  <canvas id="captureCanvas" style="display: none"></canvas>
+                  <img
+                    id="capturedImg"
+                    src=""
+                    alt=""
+                    style="
+                      width: 100%;
+                      height: 100%;
+                      object-fit: contain;
+                      display: none;
+                    "
+                  />
+                  <img
+                    id="extCamLive"
+                    src="uploads/result.jpg"
+                    alt="live"
+                    style="width: 100%; height: 100%; object-fit: contain"
+                  />
+                </div>
+                <div class="cam-controls">
+                  <button
+                    class="cam-btn capture-btn"
+                    onclick="captureExtFrame()"
+                  >
+                    📸 Chụp frame hiện tại
+                  </button>
+                  <button
+                    class="cam-btn"
+                    onclick="resetExtFrame()"
+                    id="resetFrameBtn"
+                    style="display: none"
+                  >
+                    ↺ Xem live lại
+                  </button>
+                  <label style="cursor: pointer">
+                    <input
+                      type="file"
+                      id="camImageInput"
+                      accept="image/*"
+                      style="display: none"
+                      onchange="loadCamImage(this.files[0])"
+                    />
+                    <div
+                      class="cam-btn"
+                      onclick="document.getElementById('camImageInput').click()"
+                    >
+                      📂 Upload ảnh thủ công
+                    </div>
+                  </label>
+                </div>
+                <div
+                  style="
+                    font-size: 11px;
+                    color: var(--dim);
+                    margin-top: 5px;
+                    font-family: var(--HF);
+                    letter-spacing: 1px;
+                  "
+                >
+                  ℹ Ảnh được lấy từ camera ngoài (USB/IP) qua server stream
+                </div>
+              </div>
+            </div>
+
+            <button
+              class="compare-btn"
+              id="compareBtn"
+              onclick="runAICompare()"
+              disabled
+            >
+              <span id="compareBtnText">🤖 PHÂN TÍCH VỚI AI</span>
+            </button>
+          </div>
+
+          <!-- AI Result -->
+          <div class="panel">
+            <div class="panel-title">📊 Kết quả phân tích AI</div>
+            <div class="ai-result-box" id="aiResultBox">
+              <div
+                style="
+                  color: var(--dim);
+                  text-align: center;
+                  padding: 20px;
+                  font-family: var(--HF);
+                  font-size: 12px;
+                  letter-spacing: 2px;
+                "
+              >
+                Chưa có kết quả — Upload ảnh chuẩn, chụp frame camera và bấm
+                Phân tích
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== ANALYTICS ===== -->
+      <div id="page-analytics" style="display: none">
+        <div class="main">
+          <div class="analytics-grid">
+            <div class="panel">
+              <div class="panel-title">Bảng xếp hạng lỗi</div>
+              <div class="defect-list" id="defectList">
+                <div
+                  style="
+                    color: var(--dim);
+                    font-size: 13px;
+                    text-align: center;
+                    padding: 20px;
+                  "
+                >
+                  Chưa có dữ liệu
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">So sánh ca làm việc</div>
+              <div class="shift-compare">
+                <div class="shift-box">
+                  <div class="shift-box-title">☀ Ca sáng</div>
+                  <div class="shift-stat">
+                    <span>Total</span><span id="sc-m-total">0</span>
+                  </div>
+                  <div class="shift-stat">
+                    <span>OK</span
+                    ><span id="sc-m-ok" style="color: var(--ok)">0</span>
+                  </div>
+                  <div class="shift-stat">
+                    <span>FAIL</span
+                    ><span id="sc-m-fail" style="color: var(--fail)">0</span>
+                  </div>
+                  <div class="shift-stat">
+                    <span>Error %</span><span id="sc-m-rate">0%</span>
+                  </div>
+                </div>
+                <div class="shift-box">
+                  <div class="shift-box-title">🌙 Ca chiều</div>
+                  <div class="shift-stat">
+                    <span>Total</span><span id="sc-a-total">0</span>
+                  </div>
+                  <div class="shift-stat">
+                    <span>OK</span
+                    ><span id="sc-a-ok" style="color: var(--ok)">0</span>
+                  </div>
+                  <div class="shift-stat">
+                    <span>FAIL</span
+                    ><span id="sc-a-fail" style="color: var(--fail)">0</span>
+                  </div>
+                  <div class="shift-stat">
+                    <span>Error %</span><span id="sc-a-rate">0%</span>
+                  </div>
+                </div>
+              </div>
+              <div class="chart-med"><canvas id="shiftChart"></canvas></div>
+            </div>
+          </div>
+          <div class="panel" style="margin-bottom: 16px">
+            <div class="panel-title">Heatmap lỗi theo giờ trong tuần</div>
+            <div class="heatmap-wrap">
+              <div class="heatmap" id="heatmapGrid"></div>
+            </div>
+            <div
+              style="
+                display: flex;
+                gap: 5px;
+                align-items: center;
+                margin-top: 8px;
+                font-family: var(--HF);
+                font-size: 11px;
+                letter-spacing: 1px;
+                color: var(--muted);
+              "
+            >
+              <span>Ít</span>
+              <div style="display: flex; gap: 2px">
+                <div
+                  style="
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 2px;
+                    background: #fee2e2;
+                  "
+                ></div>
+                <div
+                  style="
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 2px;
+                    background: #fca5a5;
+                  "
+                ></div>
+                <div
+                  style="
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 2px;
+                    background: #ef4444;
+                  "
+                ></div>
+                <div
+                  style="
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 2px;
+                    background: #dc2626;
+                  "
+                ></div>
+              </div>
+              <span>Nhiều</span>
+            </div>
+          </div>
+          <div class="analytics-grid">
+            <div class="panel">
+              <div class="panel-title">Tỉ lệ lỗi theo loại</div>
+              <div class="chart-tall"><canvas id="defectChart"></canvas></div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">Xu hướng 7 ngày</div>
+              <div class="chart-tall"><canvas id="trendChart"></canvas></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- /dashboard -->
+
+    <div id="lightbox" onclick="closeLightbox()">
+      <img id="lightboxImg" src="" alt="zoom" />
+    </div>
+    <div class="toast" id="toast">
+      <span id="toastMsg">⚠ DEFECT DETECTED</span>
+    </div>
+
+    <script>
+      /* ============================
+       STATE
+    ============================ */
+      const socket = io();
+      let doughnutChart,
+        lineChart,
+        hourChart,
+        shiftChart,
+        defectChart,
+        trendChart;
+      let historyOK = [],
+        historyFAIL = [],
+        labels = [],
+        historyData = [],
+        failStreak = 0,
+        chartView = "all",
+        hourView = "count";
+      let pendingNote = "",
+        totalScanned = 0,
+        soundVol = 0.7;
+      const hourOK = new Array(24).fill(0),
+        hourFail = new Array(24).fill(0);
+      const heatmapData = Array.from({ length: 7 }, () =>
+        new Array(24).fill(0),
+      );
+      const defectTypes = [
+        "Thiếu linh kiện",
+        "Hàn lỗi",
+        "Short circuit",
+        "Open circuit",
+        "Lệch vị trí",
+        "Bẩn/oxy hóa",
+      ];
+      const defectCounts = new Array(6).fill(0);
+      const shiftStats = {
+        morning: { ok: 0, fail: 0 },
+        afternoon: { ok: 0, fail: 0 },
+      };
+      const trendDays = [],
+        trendOK = [],
+        trendFail = [];
+      const sounds = {
+        beep: "https://actions.google.com/sounds/v1/alarms/beep_short.ogg",
+        alarm: "https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg",
+        chime:
+          "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg",
+      };
+
+      /* ============================
+       MOBILE HAMBURGER
+    ============================ */
+      // Show hamburger only on mobile (CSS handles visibility)
+      document.querySelector(".hamburger").style.display = "";
+      function toggleDrawer() {
+        document.getElementById("mobileDrawer").classList.toggle("open");
+      }
+      document.addEventListener("click", (e) => {
+        const d = document.getElementById("mobileDrawer");
+        if (
+          d.classList.contains("open") &&
+          !d.contains(e.target) &&
+          !e.target.closest(".hamburger")
+        )
+          d.classList.remove("open");
+      });
+
+      /* ============================
+       SCHEMATIC VIEWER
+    ============================ */
+      let schScale = 1,
+        schOffX = 0,
+        schOffY = 0,
+        schDragging = false,
+        schLastX = 0,
+        schLastY = 0,
+        schRotDeg = 0;
+      let schTouchDist = 0;
+
+      function handleSchDrop(e) {
+        e.preventDefault();
+        document.getElementById("schUploadArea").classList.remove("drag-over");
+        handleSchFile(e.dataTransfer.files[0]);
+      }
+      function handleSchFile(file) {
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        const isPDF = file.name.toLowerCase().endsWith(".pdf");
+        const canvas = document.getElementById("schCanvas");
+        document.getElementById("schUploadArea").style.display = "none";
+        canvas.style.display = "block";
+        canvas.innerHTML = '<div class="zoom-hint" id="schZoomHint">100%</div>';
+        schScale = 1;
+        schOffX = 0;
+        schOffY = 0;
+        schRotDeg = 0;
+        if (isPDF) {
+          const iframe = document.createElement("iframe");
+          iframe.src = url + "#toolbar=0&navpanes=0";
+          iframe.style.cssText =
+            "position:absolute;inset:0;width:100%;height:100%;border:none;border-radius:6px";
+          canvas.appendChild(iframe);
+        } else {
+          const img = document.createElement("img");
+          img.src = url;
+          img.style.cssText =
+            "position:absolute;top:0;left:0;transform-origin:0 0;max-width:none;cursor:grab";
+          img.onload = () => {
+            const cw = canvas.clientWidth,
+              ch = canvas.clientHeight;
+            const scale =
+              Math.min(cw / img.naturalWidth, ch / img.naturalHeight) * 0.95;
+            schScale = scale;
+            schOffX = (cw - img.naturalWidth * scale) / 2;
+            schOffY = (ch - img.naturalHeight * scale) / 2;
+            applySchTransform();
+            document.getElementById("schDims").innerText =
+              `${img.naturalWidth}×${img.naturalHeight}px`;
+          };
+          canvas.appendChild(img);
+        }
+        document.getElementById("schInfoRow").style.display = "flex";
+        document.getElementById("schFileName").innerText =
+          file.name.length > 22 ? file.name.slice(0, 20) + "…" : file.name;
+        document.getElementById("schFileType").innerText =
+          file.type || file.name.split(".").pop().toUpperCase();
+      }
+      function applySchTransform() {
+        const img = document.querySelector("#schCanvas img");
+        if (!img) return;
+        img.style.transform = `translate(${schOffX}px,${schOffY}px) scale(${schScale}) rotate(${schRotDeg}deg)`;
+        document.getElementById("schZoomHint").innerText =
+          Math.round(schScale * 100) + "%";
+      }
+      function schWheel(e) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.85 : 1.18;
+        const prev = schScale;
+        schScale = Math.min(20, Math.max(0.05, schScale * delta));
+        const canvas = document.getElementById("schCanvas");
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left,
+          my = e.clientY - rect.top;
+        schOffX = mx - (mx - schOffX) * (schScale / prev);
+        schOffY = my - (my - schOffY) * (schScale / prev);
+        applySchTransform();
+      }
+      function schDragStart(e) {
+        if (e.button !== 0) return;
+        schDragging = true;
+        schLastX = e.clientX;
+        schLastY = e.clientY;
+      }
+      function schDragMove(e) {
+        if (!schDragging) return;
+        schOffX += e.clientX - schLastX;
+        schOffY += e.clientY - schLastY;
+        schLastX = e.clientX;
+        schLastY = e.clientY;
+        applySchTransform();
+      }
+      function schDragEnd() {
+        schDragging = false;
+      }
+      function schZoom(f) {
+        schScale = Math.min(20, Math.max(0.05, schScale * f));
+        applySchTransform();
+      }
+      function schRotate() {
+        schRotDeg = (schRotDeg + 90) % 360;
+        applySchTransform();
+      }
+      function schFit() {
+        const img = document.querySelector("#schCanvas img");
+        if (!img) return;
+        const canvas = document.getElementById("schCanvas");
+        const cw = canvas.clientWidth,
+          ch = canvas.clientHeight;
+        schScale =
+          Math.min(cw / img.naturalWidth, ch / img.naturalHeight) * 0.95;
+        schOffX = (cw - img.naturalWidth * schScale) / 2;
+        schOffY = (ch - img.naturalHeight * schScale) / 2;
+        schRotDeg = 0;
+        applySchTransform();
+      }
+      function clearSch() {
+        document.getElementById("schCanvas").style.display = "none";
+        document.getElementById("schCanvas").innerHTML =
+          '<div class="zoom-hint" id="schZoomHint">100%</div>';
+        document.getElementById("schUploadArea").style.display = "block";
+        document.getElementById("schFileInput").value = "";
+        document.getElementById("schInfoRow").style.display = "none";
+      }
+
+      // Touch pinch zoom for schematic
+      document.addEventListener("DOMContentLoaded", () => {
+        const sc = document.getElementById("schCanvas");
+        if (!sc) return;
+        sc.addEventListener(
+          "touchstart",
+          (e) => {
+            if (e.touches.length === 2) {
+              schTouchDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY,
+              );
+            } else if (e.touches.length === 1) {
+              schDragging = true;
+              schLastX = e.touches[0].clientX;
+              schLastY = e.touches[0].clientY;
+            }
+          },
+          { passive: true },
+        );
+        sc.addEventListener(
+          "touchmove",
+          (e) => {
+            e.preventDefault();
+            if (e.touches.length === 2) {
+              const dist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY,
+              );
+              const delta = dist / schTouchDist;
+              schScale = Math.min(20, Math.max(0.05, schScale * delta));
+              schTouchDist = dist;
+              applySchTransform();
+            } else if (e.touches.length === 1 && schDragging) {
+              schOffX += e.touches[0].clientX - schLastX;
+              schOffY += e.touches[0].clientY - schLastY;
+              schLastX = e.touches[0].clientX;
+              schLastY = e.touches[0].clientY;
+              applySchTransform();
+            }
+          },
+          { passive: false },
+        );
+        sc.addEventListener("touchend", () => {
+          schDragging = false;
+        });
+      });
+
+      /* ============================
+       3D IMAGE VIEWER
+    ============================ */
+      let img3dScale = 1,
+        img3dOffX = 0,
+        img3dOffY = 0,
+        img3dDragging = false,
+        img3dLastX = 0,
+        img3dLastY = 0;
+      function handle3dDrop(e) {
+        e.preventDefault();
+        document
+          .getElementById("img3dUploadArea")
+          .classList.remove("drag-over");
+        handle3dFile(e.dataTransfer.files[0]);
+      }
+      function handle3dFile(file) {
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        const img = document.getElementById("view3dImg");
+        img.src = url;
+        img.onload = () => {
+          document.getElementById("img3dUploadArea").style.display = "none";
+          document.getElementById("view3dCanvas").style.display = "flex";
+          document.getElementById("controls3d").style.display = "flex";
+          document.getElementById("img3dInfoRow").style.display = "flex";
+          document.getElementById("img3dFileName").innerText =
+            file.name.length > 22 ? file.name.slice(0, 20) + "…" : file.name;
+          document.getElementById("img3dDims").innerText =
+            `${img.naturalWidth}×${img.naturalHeight}`;
+          document.getElementById("img3dSize").innerText =
+            (file.size / 1024).toFixed(0) + " KB";
+          img3dScale = 1;
+          img3dOffX = 0;
+          img3dOffY = 0;
+          applyFilters();
+          apply3dTransform();
+        };
+      }
+      function apply3dTransform() {
+        const img = document.getElementById("view3dImg");
+        img.style.transform = `translate(${img3dOffX}px,${img3dOffY}px) scale(${img3dScale})`;
+        img.style.transformOrigin = "center";
+        document.getElementById("img3dZoomHint").innerText =
+          Math.round(img3dScale * 100) + "%";
+      }
+      function applyFilters() {
+        const b = document.getElementById("slBright").value;
+        const c = document.getElementById("slContrast").value;
+        const s = document.getElementById("slSat").value;
+        document.getElementById("view3dImg").style.filter =
+          `brightness(${b}) contrast(${c}) saturate(${s})`;
+        document.getElementById("valBright").innerText =
+          parseFloat(b).toFixed(1);
+        document.getElementById("valContrast").innerText =
+          parseFloat(c).toFixed(1);
+        document.getElementById("valSat").innerText = parseFloat(s).toFixed(1);
+      }
+      function img3dWheel(e) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.85 : 1.18;
+        img3dScale = Math.min(15, Math.max(0.1, img3dScale * delta));
+        apply3dTransform();
+      }
+      function img3dDragStart(e) {
+        if (e.button !== 0) return;
+        img3dDragging = true;
+        img3dLastX = e.clientX;
+        img3dLastY = e.clientY;
+      }
+      function img3dDragMove(e) {
+        if (!img3dDragging) return;
+        img3dOffX += e.clientX - img3dLastX;
+        img3dOffY += e.clientY - img3dLastY;
+        img3dLastX = e.clientX;
+        img3dLastY = e.clientY;
+        apply3dTransform();
+      }
+      function img3dDragEnd() {
+        img3dDragging = false;
+      }
+      function img3dZoom(f) {
+        img3dScale = Math.min(15, Math.max(0.1, img3dScale * f));
+        apply3dTransform();
+      }
+      function img3dFit() {
+        img3dScale = 1;
+        img3dOffX = 0;
+        img3dOffY = 0;
+        apply3dTransform();
+      }
+      function clear3d() {
+        document.getElementById("view3dCanvas").style.display = "none";
+        document.getElementById("img3dUploadArea").style.display = "block";
+        document.getElementById("controls3d").style.display = "none";
+        document.getElementById("img3dInfoRow").style.display = "none";
+        document.getElementById("img3dFileInput").value = "";
+        document.getElementById("view3dImg").src = "";
+      }
+
+      /* ============================
+       GERBER VIEWER
+    ============================ */
+      let gerberFiles = {},
+        activeLayer = null,
+        gerberScale = 1;
+      const layerColors = {
+        "copper-top": "#ef4444",
+        "copper-bottom": "#3b82f6",
+        "silk-top": "#f59e0b",
+        "silk-bottom": "#a78bfa",
+        drill: "#8b5cf6",
+        "board-outline": "#10b981",
+        "mask-top": "#06b6d4",
+        "mask-bottom": "#ec4899",
+        unknown: "#94a3b8",
+      };
+      const layerLabels = {
+        "copper-top": "Cu Top",
+        "copper-bottom": "Cu Bot",
+        "silk-top": "Silk Top",
+        "silk-bottom": "Silk Bot",
+        "mask-top": "Mask Top",
+        "mask-bottom": "Mask Bot",
+        "board-outline": "Outline",
+        drill: "Drill",
+        unknown: "Layer",
+      };
+      function guessLayerType(n) {
+        n = n.toLowerCase();
+        if (/\.(gtl|f\.cu)/.test(n) || n.includes("gtl")) return "copper-top";
+        if (/\.(gbl|b\.cu)/.test(n) || n.includes("gbl"))
+          return "copper-bottom";
+        if (/\.gto/.test(n) || n.includes("silk")) return "silk-top";
+        if (/\.gbo/.test(n)) return "silk-bottom";
+        if (/\.gts/.test(n)) return "mask-top";
+        if (/\.gbs/.test(n)) return "mask-bottom";
+        if (/\.(gko|outline)/.test(n) || n.includes("outline"))
+          return "board-outline";
+        if (/\.(drl|exc|drill)/.test(n) || n.includes("drill")) return "drill";
+        return "unknown";
+      }
+      function handleGerberDrop(e) {
+        e.preventDefault();
+        document
+          .getElementById("gerberUploadArea")
+          .classList.remove("drag-over");
+        handleGerberFiles(e.dataTransfer.files);
+      }
+      function handleGerberFiles(files) {
+        if (!files || !files.length) return;
+        let loaded = 0;
+        Array.from(files).forEach((file) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            gerberFiles[file.name] = {
+              text: e.target.result,
+              type: guessLayerType(file.name),
+              svg: null,
+            };
+            loaded++;
+            if (loaded === files.length) renderGerberLayers();
+          };
+          reader.readAsText(file);
+        });
+      }
+      function renderGerberLayers() {
+        const names = Object.keys(gerberFiles);
+        let pending = names.length;
+        names.forEach((name) => {
+          const f = gerberFiles[name];
+          if (typeof gerberToSvg !== "undefined") {
+            try {
+              const conv = gerberToSvg(f.text, {
+                id: name.replace(/[^a-z0-9]/gi, "_"),
+              });
+              let s = "";
+              conv.on("data", (d) => {
+                s += d;
+              });
+              conv.on("end", () => {
+                f.svg = s;
+                pending--;
+                if (!pending) buildGerberUI();
+              });
+              conv.on("error", () => {
+                pending--;
+                if (!pending) buildGerberUI();
+              });
+            } catch (e) {
+              pending--;
+              if (!pending) buildGerberUI();
+            }
+          } else {
+            pending--;
+            if (!pending) buildGerberUI();
+          }
+        });
+      }
+      function buildGerberUI() {
+        const names = Object.keys(gerberFiles);
+        document.getElementById("gerberUploadArea").style.display = "none";
+        document.getElementById("gerberFileList").innerHTML = names
+          .map(
+            (n) =>
+              `<div class="file-chip ${activeLayer === n ? "active" : ""}" onclick="selectGerberLayer('${n}')">${n.length > 18 ? n.slice(0, 16) + "…" : n}</div>`,
+          )
+          .join("");
+        const lc = document.getElementById("layerControls");
+        lc.innerHTML =
+          '<span style="font-family:var(--HF);font-size:10px;letter-spacing:2px;color:var(--muted)">Layers:</span>';
+        const seen = new Set();
+        names.forEach((n) => {
+          const t = gerberFiles[n].type;
+          if (seen.has(t)) return;
+          seen.add(t);
+          const btn = document.createElement("button");
+          btn.className = "layer-btn";
+          btn.style.cssText = `border-color:${layerColors[t]};color:${layerColors[t]};background:${layerColors[t]}22`;
+          btn.innerText = layerLabels[t] || t;
+          lc.appendChild(btn);
+        });
+        if (!activeLayer)
+          activeLayer = names.find((n) => gerberFiles[n].svg) || names[0];
+        showGerberLayer(activeLayer);
+      }
+      function selectGerberLayer(name) {
+        activeLayer = name;
+        document.querySelectorAll(".file-chip").forEach((c, i) => {
+          c.classList.toggle("active", Object.keys(gerberFiles)[i] === name);
+        });
+        showGerberLayer(name);
+      }
+      function showGerberLayer(name) {
+        const f = gerberFiles[name];
+        if (!f) return;
+        const wrap = document.getElementById("gerberCanvas");
+        if (f.svg) {
+          const color = layerColors[f.type] || "#00d4ff";
+          wrap.innerHTML = `<div id="gsvgWrap" style="transform:scale(${gerberScale});transform-origin:center;padding:20px;color:${color}">${f.svg}</div>`;
+        } else {
+          wrap.innerHTML = `<div style="padding:16px;width:100%;overflow:auto;max-height:400px"><pre style="font-size:11px;color:#4ade80;line-height:1.6">${f.text.slice(0, 2500)}${f.text.length > 2500 ? "\n…(truncated)" : ""}</pre></div>`;
+        }
+      }
+      function gerberZoom(f) {
+        gerberScale = Math.min(20, Math.max(0.05, gerberScale * f));
+        const w = document.getElementById("gsvgWrap");
+        if (w) w.style.transform = `scale(${gerberScale})`;
+      }
+      function gerberFit() {
+        gerberScale = 1;
+        const w = document.getElementById("gsvgWrap");
+        if (w) w.style.transform = "scale(1)";
+      }
+      function clearGerber() {
+        gerberFiles = {};
+        activeLayer = null;
+        gerberScale = 1;
+        document.getElementById("gerberFileList").innerHTML = "";
+        document.getElementById("layerControls").innerHTML = "";
+        document.getElementById("gerberFileInput").value = "";
+        document.getElementById("gerberUploadArea").style.display = "block";
+        document.getElementById("gerberCanvas").innerHTML =
+          '<div class="sch-placeholder"><div class="sch-placeholder-icon">🔌</div><div class="sch-placeholder-text">Chưa có Gerber file</div><div class="sch-placeholder-sub">Upload để xem layout từng layer</div></div>';
+      }
+
+      /* ============================
+       AI COMPARE — EXTERNAL CAMERA
+    ============================ */
+      let refImageData = null,
+        camImageData = null,
+        dashRefImageData = null;
+
+      // Live feed auto-refreshes from socket; extCamLive shows result.jpg
+      // When socket updates result.jpg, also refresh the live preview in AI Compare
+      function refreshExtCamLive() {
+        const liveImg = document.getElementById("extCamLive");
+        const captured = document.getElementById("capturedImg");
+        if (liveImg && liveImg.style.display !== "none") {
+          liveImg.src = "uploads/result.jpg?" + Date.now();
+        }
+      }
+
+      function captureExtFrame() {
+        // Grab current result.jpg (latest external camera frame) as base64
+        const liveImg = document.getElementById("extCamLive");
+        const canvas = document.getElementById("captureCanvas");
+        const tmpImg = new Image();
+        tmpImg.crossOrigin = "anonymous";
+        tmpImg.src = "uploads/result.jpg?" + Date.now();
+        tmpImg.onload = () => {
+          canvas.width = tmpImg.naturalWidth || 640;
+          canvas.height = tmpImg.naturalHeight || 480;
+          canvas.getContext("2d").drawImage(tmpImg, 0, 0);
+          camImageData = canvas.toDataURL("image/jpeg", 0.92);
+          // Show captured still
+          const cap = document.getElementById("capturedImg");
+          cap.src = camImageData;
+          cap.style.display = "block";
+          liveImg.style.display = "none";
+          document.getElementById("resetFrameBtn").style.display =
+            "inline-flex";
+          document.getElementById("extCamStatus").innerText = "● CHỤP";
+          document.getElementById("extCamStatus").style.background =
+            "var(--warn-lt)";
+          document.getElementById("extCamStatus").style.color = "var(--warn)";
+          checkCompareReady();
+        };
+        tmpImg.onerror = () => {
+          // Fallback: use current resultImage src
+          const ri = document.getElementById("resultImage");
+          const c2 = document.getElementById("captureCanvas");
+          const i2 = new Image();
+          i2.crossOrigin = "anonymous";
+          i2.src = ri.src;
+          i2.onload = () => {
+            c2.width = i2.naturalWidth;
+            c2.height = i2.naturalHeight;
+            c2.getContext("2d").drawImage(i2, 0, 0);
+            camImageData = c2.toDataURL("image/jpeg", 0.92);
+            document.getElementById("capturedImg").src = camImageData;
+            document.getElementById("capturedImg").style.display = "block";
+            liveImg.style.display = "none";
+            document.getElementById("resetFrameBtn").style.display =
+              "inline-flex";
+            checkCompareReady();
+          };
+        };
+      }
+
+      function resetExtFrame() {
+        camImageData = null;
+        document.getElementById("capturedImg").style.display = "none";
+        document.getElementById("extCamLive").style.display = "block";
+        document.getElementById("resetFrameBtn").style.display = "none";
+        document.getElementById("extCamStatus").innerText = "● LIVE";
+        document.getElementById("extCamStatus").style.background =
+          "var(--ok-lt)";
+        document.getElementById("extCamStatus").style.color = "var(--ok)";
+        checkCompareReady();
+      }
+
+      function loadRefImage(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          refImageData = e.target.result;
+          document.getElementById("refFrame").innerHTML =
+            `<img src="${refImageData}" style="width:100%;height:100%;object-fit:contain"/>`;
+          checkCompareReady();
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function loadCamImage(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          camImageData = e.target.result;
+          document.getElementById("capturedImg").src = camImageData;
+          document.getElementById("capturedImg").style.display = "block";
+          document.getElementById("extCamLive").style.display = "none";
+          document.getElementById("resetFrameBtn").style.display =
+            "inline-flex";
+          checkCompareReady();
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function checkCompareReady() {
+        const ok = !!(refImageData && camImageData);
+        document.getElementById("compareBtn").disabled = !ok;
+        document.getElementById("compareBtn").style.opacity = ok ? "1" : ".5";
+      }
+
+      // Dashboard inline ref image loader
+      function loadRefImageDash(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          dashRefImageData = e.target.result;
+          const thumb = document.getElementById("refThumb");
+          thumb.innerHTML = `<img src="${dashRefImageData}" style="width:100%;height:100%;object-fit:cover"/>`;
+          const btn = document.getElementById("dashCompareBtn");
+          btn.disabled = false;
+          btn.style.opacity = "1";
+          // Also sync to AI Compare tab
+          refImageData = dashRefImageData;
+          document.getElementById("refFrame").innerHTML =
+            `<img src="${dashRefImageData}" style="width:100%;height:100%;object-fit:contain"/>`;
+          checkCompareReady();
+        };
+        reader.readAsDataURL(file);
+      }
+
+      // Dashboard quick compare — grabs current result.jpg
+      async function runDashAICompare() {
+        const btn = document.getElementById("dashCompareBtn");
+        if (!dashRefImageData) {
+          showToast("Chưa chọn ảnh 3D chuẩn", false);
+          return;
+        }
+        btn.disabled = true;
+        btn.style.opacity = ".5";
+        btn.innerText = "⏳ Đang phân tích...";
+        const box = document.getElementById("dashAiResult");
+        const content = document.getElementById("dashAiContent");
+        box.style.display = "block";
+        content.innerHTML =
+          '<div style="color:var(--muted);font-family:var(--HF);font-size:11px;letter-spacing:2px">AI đang phân tích frame camera...</div>';
+        // Grab current camera frame
+        const tmpImg = new Image();
+        tmpImg.crossOrigin = "anonymous";
+        tmpImg.src = "uploads/result.jpg?" + Date.now();
+        tmpImg.onload = async () => {
+          const c = document.getElementById("captureCanvas");
+          c.width = tmpImg.naturalWidth || 640;
+          c.height = tmpImg.naturalHeight || 480;
+          c.getContext("2d").drawImage(tmpImg, 0, 0);
+          const frameB64 = c.toDataURL("image/jpeg", 0.9).split(",")[1];
+          const refB64 = dashRefImageData.split(",")[1];
+          const refMime = dashRefImageData.split(";")[0].split(":")[1];
+          await _callAICompare(
+            refB64,
+            refMime,
+            frameB64,
+            "image/jpeg",
+            content,
+            () => {
+              btn.disabled = false;
+              btn.style.opacity = "1";
+              btn.innerText = "🤖 SO SÁNH AI";
+            },
+          );
+        };
+        tmpImg.onerror = () => {
+          content.innerHTML =
+            '<span style="color:var(--fail)">Không đọc được frame camera</span>';
+          btn.disabled = false;
+          btn.style.opacity = "1";
+          btn.innerText = "🤖 SO SÁNH AI";
+        };
+      }
+
+      async function runAICompare() {
+        if (!refImageData || !camImageData) return;
+        const btn = document.getElementById("compareBtn");
+        const btnText = document.getElementById("compareBtnText");
+        btn.disabled = true;
+        btnText.innerHTML = "⏳ Đang phân tích...";
+        const box = document.getElementById("aiResultBox");
+        box.innerHTML =
+          '<div style="text-align:center;padding:24px"><div style="width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--blue2);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px"></div><div style="font-family:var(--HF);font-size:12px;letter-spacing:2px;color:var(--muted)">AI đang so sánh mạch...</div></div>';
+        const refB64 = refImageData.split(",")[1];
+        const refMime = refImageData.split(";")[0].split(":")[1];
+        const camB64 = camImageData.split(",")[1];
+        const camMime = camImageData.split(";")[0].split(":")[1];
+        await _callAICompare(
+          refB64,
+          refMime,
+          camB64,
+          camMime,
+          box,
+          () => {
+            btn.disabled = false;
+            btnText.innerHTML = "🤖 PHÂN TÍCH LẠI";
+            btn.style.opacity = "1";
+          },
+          true,
+        );
+      }
+
+      // Shared AI compare logic
+      async function _callAICompare(
+        refB64,
+        refMime,
+        camB64,
+        camMime,
+        container,
+        onDone,
+        fullLayout = false,
+      ) {
+        try {
+          const resp = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 1000,
+              system: `Bạn là chuyên gia kiểm tra chất lượng PCB.
+So sánh ảnh mạch 3D chuẩn với ảnh thực tế từ camera ngoài.
+Trả lời CHỈ JSON, không có text ngoài:
+{"verdict":"MATCH"|"MISMATCH","similarity":0-100,"issues":[{"text":"..."}],"ok_points":["..."],"recommendation":"..."}`,
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "image",
+                      source: {
+                        type: "base64",
+                        media_type: refMime,
+                        data: refB64,
+                      },
+                    },
+                    { type: "text", text: "Ảnh mạch 3D CHUẨN." },
+                    {
+                      type: "image",
+                      source: {
+                        type: "base64",
+                        media_type: camMime,
+                        data: camB64,
+                      },
+                    },
+                    {
+                      type: "text",
+                      text: "Ảnh THỰC TẾ từ camera ngoài. So sánh và trả về JSON.",
+                    },
+                  ],
+                },
+              ],
+            }),
+          });
+          const data = await resp.json();
+          const text = data.content
+            .map((i) => i.text || "")
+            .filter(Boolean)
+            .join("");
+          let result;
+          try {
+            result = JSON.parse(text.replace(/```json|```/g, "").trim());
+          } catch (e) {
+            if (fullLayout)
+              container.innerHTML = `<div class="ai-result-content" style="white-space:pre-wrap">${text}</div>`;
+            else
+              container.innerHTML = `<span style="font-size:12px">${text.slice(0, 300)}</span>`;
+            onDone();
+            return;
+          }
+          const isMatch = result.verdict === "MATCH";
+          const sim = result.similarity || 0;
+          const confClass =
+            sim >= 80 ? "conf-high" : sim >= 50 ? "conf-mid" : "conf-low";
+          if (fullLayout) {
+            let html = `<div class="ai-result-title">KẾT QUẢ PHÂN TÍCH AI</div>
+            <div class="ai-verdict ${isMatch ? "match" : "mismatch"}">${isMatch ? "✅ MATCH — Mạch khớp" : "❌ MISMATCH — Phát hiện sai lệch"}</div>
+            <div style="margin:10px 0">
+              <div style="display:flex;justify-content:space-between;font-family:var(--HF);font-size:11px;letter-spacing:1px;color:var(--muted);margin-bottom:4px"><span>Điểm tương đồng</span><span style="color:var(--text)">${sim}%</span></div>
+              <div class="ai-confidence-bar"><div class="ai-confidence-fill ${confClass}" style="width:${sim}%"></div></div>
+            </div>`;
+            if (result.issues && result.issues.length) {
+              html += `<div style="font-family:var(--HF);font-size:11px;letter-spacing:2px;color:var(--fail);margin:10px 0 6px">⚠ VẤN ĐỀ PHÁT HIỆN</div><ul class="ai-diff-list">`;
+              result.issues.forEach((i) => {
+                html += `<li>${i.text || i}</li>`;
+              });
+              html += `</ul>`;
+            }
+            if (result.ok_points && result.ok_points.length) {
+              html += `<div style="font-family:var(--HF);font-size:11px;letter-spacing:2px;color:var(--ok);margin:10px 0 6px">✔ ĐIỂM ĐẠT</div><ul class="ai-diff-list">`;
+              result.ok_points.forEach((p) => {
+                html += `<li class="ok-item">${p}</li>`;
+              });
+              html += `</ul>`;
+            }
+            if (result.recommendation) {
+              html += `<div style="margin-top:12px;padding:10px 14px;background:var(--bg);border-radius:6px;border-left:3px solid var(--blue2)"><div style="font-family:var(--HF);font-size:10px;letter-spacing:2px;color:var(--muted);margin-bottom:4px">KHUYẾN NGHỊ</div><div style="font-size:13px;color:var(--text)">${result.recommendation}</div></div>`;
+            }
+            container.innerHTML = html;
+          } else {
+            // Compact for dashboard
+            const verdictColor = isMatch ? "var(--ok)" : "var(--fail)";
+            let html = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span style="font-family:var(--HF);font-size:12px;letter-spacing:2px;color:${verdictColor}">${isMatch ? "✅ MATCH" : "❌ MISMATCH"}</span>
+            <span style="font-family:var(--HF);font-size:11px;color:var(--muted)">Tương đồng: <strong style="color:var(--text)">${sim}%</strong></span>
+          </div>
+          <div class="ai-confidence-bar"><div class="ai-confidence-fill ${confClass}" style="width:${sim}%"></div></div>`;
+            if (result.issues && result.issues.length) {
+              html += `<div style="margin-top:8px">`;
+              result.issues.slice(0, 3).forEach((i) => {
+                html += `<div style="font-size:11px;color:var(--fail);padding:2px 0">▸ ${i.text || i}</div>`;
+              });
+              if (result.issues.length > 3)
+                html += `<div style="font-size:11px;color:var(--dim)">...và ${result.issues.length - 3} vấn đề khác</div>`;
+              html += `</div>`;
+            }
+            if (result.recommendation)
+              html += `<div style="margin-top:6px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);padding-top:6px">${result.recommendation}</div>`;
+            container.innerHTML = html;
+          }
+          if (!isMatch) showToast("⚠ AI: Phát hiện sai lệch mạch!", true);
+        } catch (err) {
+          const msg = `<span style="color:var(--fail);font-family:var(--HF);font-size:12px">❌ Lỗi API: ${err.message}</span>`;
+          if (fullLayout)
+            container.innerHTML = `<div style="padding:20px;text-align:center">${msg}</div>`;
+          else container.innerHTML = msg;
+        } finally {
+          onDone();
+        }
+      }
+
+      /* ============================
+       DASHBOARD LOGIC
+    ============================ */
+      function playAlert() {
+        const t = document.getElementById("soundType").value;
+        if (t === "off") return;
+        const s = new Audio(sounds[t]);
+        s.volume = soundVol;
+        s.play().catch(() => {});
+      }
+      function testSound() {
+        const t = document.getElementById("soundType").value;
+        if (t === "off") return;
+        const s = new Audio(sounds[t]);
+        s.volume = soundVol;
+        s.play().catch(() => {});
+      }
+
+      function startDashboard() {
+        document.getElementById("intro").style.cssText =
+          "opacity:0;transform:scale(1.04)";
+        setTimeout(() => {
+          document.getElementById("intro").style.display = "none";
+          document.getElementById("dashboard").style.display = "block";
+          initCharts();
+          buildHeatmap();
+          // show hamburger on mobile via CSS
+          const h = document.querySelector(".hamburger");
+          if (window.innerWidth <= 600) h.style.display = "flex";
+        }, 800);
+      }
+
+      function showPage(id, btn) {
+        ["main", "pcbview", "aicompare", "analytics"].forEach((p) => {
+          document.getElementById("page-" + p).style.display = "none";
+        });
+        document.getElementById("page-" + id).style.display = "block";
+        document
+          .querySelectorAll(".nav-tab")
+          .forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+      }
+
+      function initCharts() {
+        doughnutChart = new Chart(document.getElementById("doughnutChart"), {
+          type: "doughnut",
+          data: {
+            labels: ["OK", "FAIL"],
+            datasets: [
+              {
+                data: [1, 0],
+                backgroundColor: ["#16a34a", "#dc2626"],
+                borderWidth: 0,
+                hoverOffset: 5,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "72%",
+            plugins: { legend: { display: false } },
+          },
+        });
+        const fc = { family: "DM Sans", size: 11 },
+          tc = "#94a3b8";
+        lineChart = new Chart(document.getElementById("lineChart"), {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "OK",
+                data: historyOK,
+                borderColor: "#16a34a",
+                backgroundColor: "rgba(22,163,74,.07)",
+                tension: 0.4,
+                fill: true,
+                pointRadius: 3,
+              },
+              {
+                label: "FAIL",
+                data: historyFAIL,
+                borderColor: "#dc2626",
+                backgroundColor: "rgba(220,38,38,.07)",
+                tension: 0.4,
+                fill: true,
+                pointRadius: 3,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+              legend: {
+                labels: {
+                  font: { family: "Exo 2", size: 13, weight: "700" },
+                  color: "#64748b",
+                  boxWidth: 10,
+                  padding: 14,
+                },
+              },
+            },
+            scales: {
+              x: {
+                grid: { color: "rgba(0,0,0,.05)" },
+                ticks: { font: fc, color: tc, maxRotation: 0 },
+              },
+              y: {
+                beginAtZero: true,
+                grid: { color: "rgba(0,0,0,.05)" },
+                ticks: { font: fc, color: tc },
+              },
+            },
+          },
+        });
+        const hLabels = Array.from({ length: 24 }, (_, i) => i + "h");
+        hourChart = new Chart(document.getElementById("hourChart"), {
+          type: "bar",
+          data: {
+            labels: hLabels,
+            datasets: [
+              {
+                label: "OK",
+                data: [...hourOK],
+                backgroundColor: "rgba(22,163,74,.7)",
+                borderRadius: 3,
+              },
+              {
+                label: "FAIL",
+                data: [...hourFail],
+                backgroundColor: "rgba(220,38,38,.7)",
+                borderRadius: 3,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                labels: {
+                  font: { family: "Exo 2", size: 12, weight: "700" },
+                  color: "#64748b",
+                  boxWidth: 10,
+                  padding: 12,
+                },
+              },
+            },
+            scales: {
+              x: {
+                grid: { display: false },
+                ticks: { font: { family: "DM Sans", size: 9 }, color: tc },
+              },
+              y: {
+                beginAtZero: true,
+                grid: { color: "rgba(0,0,0,.05)" },
+                ticks: { font: { family: "DM Sans", size: 9 }, color: tc },
+              },
+            },
+          },
+        });
+        shiftChart = new Chart(document.getElementById("shiftChart"), {
+          type: "bar",
+          data: {
+            labels: ["Ca sáng", "Ca chiều"],
+            datasets: [
+              {
+                label: "OK",
+                data: [0, 0],
+                backgroundColor: "rgba(22,163,74,.7)",
+                borderRadius: 4,
+              },
+              {
+                label: "FAIL",
+                data: [0, 0],
+                backgroundColor: "rgba(220,38,38,.7)",
+                borderRadius: 4,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                labels: {
+                  font: { family: "Exo 2", size: 12, weight: "700" },
+                  color: "#64748b",
+                  boxWidth: 10,
+                },
+              },
+            },
+            scales: {
+              x: {
+                grid: { display: false },
+                ticks: {
+                  font: { family: "Exo 2", size: 12, weight: "700" },
+                  color: tc,
+                },
+              },
+              y: {
+                beginAtZero: true,
+                grid: { color: "rgba(0,0,0,.05)" },
+                ticks: { font: { family: "DM Sans", size: 9 }, color: tc },
+              },
+            },
+          },
+        });
+        defectChart = new Chart(document.getElementById("defectChart"), {
+          type: "doughnut",
+          data: {
+            labels: defectTypes,
+            datasets: [
+              {
+                data: [...defectCounts],
+                backgroundColor: [
+                  "#dc2626",
+                  "#d97706",
+                  "#7c3aed",
+                  "#2563eb",
+                  "#16a34a",
+                  "#64748b",
+                ],
+                borderWidth: 0,
+                hoverOffset: 6,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: "right",
+                labels: {
+                  font: { family: "DM Sans", size: 11 },
+                  color: "#64748b",
+                  boxWidth: 10,
+                  padding: 10,
+                },
+              },
+            },
+          },
+        });
+        const today = new Date();
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date(today);
+          d.setDate(d.getDate() - i);
+          trendDays.push(
+            d.toLocaleDateString("vi", { month: "2-digit", day: "2-digit" }),
+          );
+          trendOK.push(0);
+          trendFail.push(0);
+        }
+        trendChart = new Chart(document.getElementById("trendChart"), {
+          type: "line",
+          data: {
+            labels: trendDays,
+            datasets: [
+              {
+                label: "OK",
+                data: trendOK,
+                borderColor: "#16a34a",
+                backgroundColor: "rgba(22,163,74,.07)",
+                tension: 0.4,
+                fill: true,
+                pointRadius: 4,
+              },
+              {
+                label: "FAIL",
+                data: trendFail,
+                borderColor: "#dc2626",
+                backgroundColor: "rgba(220,38,38,.07)",
+                tension: 0.4,
+                fill: true,
+                pointRadius: 4,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+              legend: {
+                labels: {
+                  font: { family: "Exo 2", size: 13, weight: "700" },
+                  color: "#64748b",
+                  boxWidth: 10,
+                  padding: 14,
+                },
+              },
+            },
+            scales: {
+              x: {
+                grid: { color: "rgba(0,0,0,.05)" },
+                ticks: { font: { family: "DM Sans", size: 11 }, color: tc },
+              },
+              y: {
+                beginAtZero: true,
+                grid: { color: "rgba(0,0,0,.05)" },
+                ticks: { font: { family: "DM Sans", size: 10 }, color: tc },
+              },
+            },
+          },
+        });
+      }
+
+      function buildHeatmap() {
+        const grid = document.getElementById("heatmapGrid");
+        const days = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+        grid.innerHTML = "";
+        const c = document.createElement("div");
+        c.className = "hm-header";
+        grid.appendChild(c);
+        for (let h = 0; h < 24; h++) {
+          const el = document.createElement("div");
+          el.className = "hm-header";
+          el.innerText = h + "h";
+          grid.appendChild(el);
+        }
+        days.forEach((day, di) => {
+          const lbl = document.createElement("div");
+          lbl.className = "hm-label";
+          lbl.innerText = day;
+          grid.appendChild(lbl);
+          for (let h = 0; h < 24; h++) {
+            const el = document.createElement("div");
+            el.className = "hm-cell";
+            el.id = `hm-${di}-${h}`;
+            el.style.background = "var(--bg)";
+            grid.appendChild(el);
+          }
+        });
+      }
+      function updateHeatmap(di, h, count) {
+        const el = document.getElementById(`hm-${di}-${h}`);
+        if (!el) return;
+        const max = Math.max(...heatmapData.flat(), 1);
+        const ci = Math.min(3, Math.floor((count / max) * 4));
+        const cols = ["#fee2e2", "#fca5a5", "#ef4444", "#dc2626"];
+        el.style.background = count > 0 ? cols[ci] : "var(--bg)";
+        el.style.color = ci >= 2 ? "white" : "transparent";
+        el.innerText = count > 0 ? count : "";
+        el.title = `${h}:00 — ${count} lỗi`;
+      }
+
+      socket.on("update", (data) => {
+        totalScanned = data.total;
+        animateValue("totalValue", data.total);
+        animateValue("okValue", data.ok);
+        animateValue("failValue", data.fail);
+        const pct =
+          data.total > 0 ? ((data.fail / data.total) * 100).toFixed(1) : 0;
+        document.getElementById("percentValue").innerText = pct + "%";
+        document.getElementById("percentCenter").innerText = pct + "%";
+        const isOK = data.status === "OK",
+          isFail = data.status === "FAIL";
+        const ring = document.getElementById("statusRing");
+        ring.className = "status-ring " + (isOK ? "ok" : isFail ? "fail" : "");
+        ring.innerText = isOK ? "✔" : isFail ? "✘" : "⏳";
+        const stEl = document.getElementById("statusText");
+        stEl.className =
+          "status-text " + (isOK ? "ok" : isFail ? "fail" : "wait");
+        stEl.innerText = data.status;
+        document.getElementById("imgOverlay").className =
+          "img-overlay " + (isOK ? "ok" : isFail ? "fail" : "");
+        if (isFail) {
+          failStreak++;
+          playAlert();
+          const di = Math.floor(Math.random() * defectTypes.length);
+          defectCounts[di]++;
+          defectChart.data.datasets[0].data = [...defectCounts];
+          defectChart.update();
+          updateDefectList();
+          const thresh = parseInt(
+            document.getElementById("streakThreshold").value,
+          );
+          if (failStreak >= thresh) {
+            showToast(`⚠ ${failStreak} LỖI LIÊN TIẾP!`, true);
+            document.getElementById("streakText").innerText =
+              failStreak + " lỗi liên tiếp";
+            document.getElementById("streakBanner").style.display = "flex";
+          } else showToast("⚠ DEFECT DETECTED", false);
+        } else if (isOK) {
+          failStreak = 0;
+          document.getElementById("streakBanner").style.display = "none";
+        }
+        const h = new Date().getHours();
+        const shift = h >= 6 && h < 14 ? "morning" : "afternoon";
+        if (isOK) shiftStats[shift].ok++;
+        else if (isFail) shiftStats[shift].fail++;
+        updateShiftCompare();
+        if (isFail) {
+          const day = new Date().getDay();
+          const di = day === 0 ? 6 : day - 1;
+          heatmapData[di][h]++;
+          updateHeatmap(di, h, heatmapData[di][h]);
+        }
+        if (isOK) trendOK[trendOK.length - 1]++;
+        else if (isFail) trendFail[trendFail.length - 1]++;
+        trendChart.update();
+        if (isOK) hourOK[h]++;
+        if (isFail) hourFail[h]++;
+        updateHourView();
+        doughnutChart.data.datasets[0].data = [data.ok || 0, data.fail || 0];
+        doughnutChart.update();
+        if (labels.length > 20) {
+          labels.shift();
+          historyOK.shift();
+          historyFAIL.shift();
+        }
+        labels.push(
+          new Date().toLocaleTimeString("vi", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+        );
+        historyOK.push(data.ok);
+        historyFAIL.push(data.fail);
+        updateLineView();
+        addHistory(data);
+        const img = document.getElementById("resultImage");
+        img.style.opacity = ".5";
+        img.src = "uploads/result.jpg?" + Date.now();
+        img.onload = () => {
+          img.style.opacity = "1";
+        };
+        refreshExtCamLive();
+      });
+
+      function updateShiftCompare() {
+        ["m", "a"].forEach((k, i) => {
+          const s = i === 0 ? shiftStats.morning : shiftStats.afternoon;
+          const total = s.ok + s.fail;
+          const rate = total > 0 ? ((s.fail / total) * 100).toFixed(1) : 0;
+          document.getElementById(`sc-${k}-total`).innerText = total;
+          document.getElementById(`sc-${k}-ok`).innerText = s.ok;
+          document.getElementById(`sc-${k}-fail`).innerText = s.fail;
+          document.getElementById(`sc-${k}-rate`).innerText = rate + "%";
+        });
+        shiftChart.data.datasets[0].data = [
+          shiftStats.morning.ok,
+          shiftStats.afternoon.ok,
+        ];
+        shiftChart.data.datasets[1].data = [
+          shiftStats.morning.fail,
+          shiftStats.afternoon.fail,
+        ];
+        shiftChart.update();
+      }
+      function updateDefectList() {
+        const sorted = defectTypes
+          .map((n, i) => ({ name: n, count: defectCounts[i] }))
+          .sort((a, b) => b.count - a.count);
+        const max = sorted[0].count || 1;
+        document.getElementById("defectList").innerHTML =
+          sorted
+            .filter((d) => d.count > 0)
+            .map(
+              (d, i) =>
+                `<div class="defect-row"><div class="defect-rank">#${i + 1}</div><div class="defect-name">${d.name}</div><div class="defect-bar-outer"><div class="defect-bar-inner" style="width:${((d.count / max) * 100).toFixed(0)}%"></div></div><div class="defect-count">${d.count}</div></div>`,
+            )
+            .join("") ||
+          '<div style="color:var(--dim);font-size:13px;text-align:center;padding:20px">Chưa có dữ liệu</div>';
+      }
+      function animateValue(id, value) {
+        const el = document.getElementById(id);
+        let start = parseInt(el.innerText) || 0;
+        const range = value - start;
+        let i = 0;
+        const iv = setInterval(() => {
+          el.innerText = Math.round(start + range * (i / 20));
+          if (++i > 20) {
+            clearInterval(iv);
+            el.innerText = value;
+          }
+        }, 20);
+      }
+      function saveNote() {
+        pendingNote = document.getElementById("noteInput").value;
+        document.getElementById("noteInput").value = "";
+        document.getElementById("noteInput").placeholder = "✓ Đã lưu";
+        setTimeout(() => {
+          document.getElementById("noteInput").placeholder =
+            "Ghi chú cho FAIL tiếp theo...";
+        }, 2500);
+      }
+      function addHistory(data) {
+        const note = data.status === "FAIL" && pendingNote ? pendingNote : "";
+        if (data.status === "FAIL") pendingNote = "";
+        historyData.unshift({
+          ...data,
+          time: new Date().toLocaleTimeString(),
+          note,
+        });
+        if (historyData.length > 200) historyData.pop();
+        document.getElementById("histCount").innerText =
+          historyData.length + " records";
+        applyFilter();
+      }
+      function applyFilter() {
+        const st = document.getElementById("filterStatus").value;
+        const from = document.getElementById("filterFrom").value;
+        const to = document.getElementById("filterTo").value;
+        document.getElementById("historyBody").innerHTML = historyData
+          .filter((d) => {
+            if (st !== "all" && d.status !== st) return false;
+            if (from && d.time < from) return false;
+            if (to && d.time > to) return false;
+            return true;
+          })
+          .slice(0, 100)
+          .map(
+            (d) =>
+              `<tr><td style="font-size:11px">${d.time}</td><td><span class="badge badge-${d.status === "OK" ? "ok" : "fail"}">${d.status}</span></td><td>${d.total}</td><td style="color:var(--ok);font-weight:600">${d.ok}</td><td style="color:var(--fail);font-weight:600">${d.fail}</td><td style="font-size:11px;color:var(--muted);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.note || ""}</td></tr>`,
+          )
+          .join("");
+      }
+      function resetFilter() {
+        document.getElementById("filterStatus").value = "all";
+        document.getElementById("filterFrom").value = "";
+        document.getElementById("filterTo").value = "";
+        applyFilter();
+      }
+      function setView(btn, view) {
+        chartView = view;
+        btn
+          .closest(".chart-tabs")
+          .querySelectorAll(".tab-btn")
+          .forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        updateLineView();
+      }
+      function updateLineView() {
+        lineChart.data.datasets[0].hidden = chartView === "fail";
+        lineChart.data.datasets[1].hidden = chartView === "ok";
+        lineChart.update();
+      }
+      function setHourView(btn, view) {
+        hourView = view;
+        btn
+          .closest(".chart-tabs")
+          .querySelectorAll(".tab-btn")
+          .forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        updateHourView();
+      }
+      function updateHourView() {
+        if (hourView === "count") {
+          hourChart.data.datasets[0].data = [...hourOK];
+          hourChart.data.datasets[1].data = [...hourFail];
+          hourChart.data.datasets[0].label = "OK";
+          hourChart.data.datasets[1].label = "FAIL";
+        } else {
+          hourChart.data.datasets[0].data = hourOK.map((ok, i) => {
+            const t = ok + hourFail[i];
+            return t > 0 ? parseFloat(((hourFail[i] / t) * 100).toFixed(1)) : 0;
+          });
+          hourChart.data.datasets[1].data = new Array(24).fill(0);
+          hourChart.data.datasets[0].label = "Error %";
+        }
+        hourChart.update();
+      }
+      function showToast(msg, isWarn) {
+        const t = document.getElementById("toast");
+        document.getElementById("toastMsg").innerText = msg;
+        t.className = "toast show" + (isWarn ? " warn-toast" : "");
+        clearTimeout(t._t);
+        t._t = setTimeout(() => t.classList.remove("show"), 3500);
+      }
+      function openLightbox(src) {
+        document.getElementById("lightboxImg").src = src;
+        document.getElementById("lightbox").classList.add("show");
+      }
+      function closeLightbox() {
+        document.getElementById("lightbox").classList.remove("show");
+      }
+      function exportCSV() {
+        let csv = "Time,Status,Total,OK,FAIL,Note\n";
+        historyData.forEach((d) => {
+          csv += `${d.time},${d.status},${d.total},${d.ok},${d.fail},"${d.note || ""}"\n`;
+        });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+        a.download = `pcb_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+      }
+      function toggleDark() {
+        document.body.classList.toggle("dark");
+      }
+      function goFull() {
+        document.documentElement.requestFullscreen();
+      }
+      function logout() {
+        fetch("/logout").then(() => (location.href = "/login.html"));
+      }
+
+      // Responsive hamburger show/hide
+      window.addEventListener("resize", () => {
+        const h = document.querySelector(".hamburger");
+        if (h) h.style.display = window.innerWidth <= 600 ? "flex" : "none";
+      });
+    </script>
+  </body>
+</html>
