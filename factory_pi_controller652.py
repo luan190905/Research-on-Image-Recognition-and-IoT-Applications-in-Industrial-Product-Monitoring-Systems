@@ -3,10 +3,10 @@ import time
 
 import paho.mqtt.client as mqtt
 
-from testaifix562 import app, engine
+from testaifix57 import app, engine
 
 
-MQTT_BROKER = "192.168.1.100"
+MQTT_BROKER = ""
 MQTT_PORT = 1883
 
 TOPIC_INSPECTION_REQUEST = "factory/main/inspection/request"

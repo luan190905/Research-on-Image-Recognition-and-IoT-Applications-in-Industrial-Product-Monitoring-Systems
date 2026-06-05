@@ -2,9 +2,9 @@
 #include <PubSubClient.h>
 #include <ESP32Servo.h>
 
-const char* WIFI_SSID = "iPhone (9)";
-const char* WIFI_PASSWORD = "okokokok";
-const char* MQTT_BROKER = "172.20.10.7";
+const char* WIFI_SSID = "";
+const char* WIFI_PASSWORD = "";
+const char* MQTT_BROKER = "";
 const int MQTT_PORT = 1883;
 
 const char* TOPIC_INSPECTION_REQUEST = "factory/main/inspection/request";
